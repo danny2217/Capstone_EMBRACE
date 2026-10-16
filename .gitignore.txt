@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.zip
+Thumbs.db
+desktop.ini
+
+# 실측 호흡 데이터: 팀 합의 전까지 제외
+**/data/breath_*.csv
