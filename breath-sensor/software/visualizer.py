@@ -1,69 +1,60 @@
 #!/usr/bin/env python3
-"""Air-Rhythm 실시간 호흡 파형 시각화 (FR-02, FR-03)
+"""EMBRACE 호흡 파형 시각화 (breath-sensor) — 프로토콜 v2 (firmware/embrace_node)
 
-ESP32(sensor_reader.ino)가 보내는 'seq<TAB>t_ms<TAB>mv<TAB>ma_mv' 줄을 받아
-실시간 그래프로 그리고, 동시에 CSV 로 기록한다.
+ESP32-S3 펌웨어가 보내는 5채널 프레임 중 'breath' 열을 받아 실시간 그래프로 그리고,
+프레임 전체(5채널 + flags)와 호흡 분석 열을 CSV 로 기록한다.
+수신·파싱·CSV 는 저장소 루트의 common/embrace_link.py 가 맡는다.
 
 그래프는 두 칸으로 나뉜다.
   ① 측정값      : 기기가 보낸 mV 그대로 (오버샘플링 평균)
   ② 필터링 값   : 2차 Butterworth 대역통과 0.08~0.7 Hz (PC 에서 계산, 인과적)
-                  드리프트(자세 변화)와 고주파 노이즈를 제거해 0 mV 를 중심으로
-                  진동하는 하나의 매끈한 곡선이 된다.
   필터는 원본 Air-Rhythm 레포 breath/filters.py 의 BandpassButter2 를 그대로 옮긴 것이다.
 
 흡기/호기 판별 (② 그래프 위에 표시)
-  필터링 값에 원본 레포 breath/detectors/slope.py 의 SlopeDetector 를 적용한다.
+  원본 레포 breath/detectors/slope.py 의 SlopeDetector 를 적용한다.
     빨간 선 + ▲ = 흡기 구간 / 흡기 시작 확정 지점
     초록 선 + ▼ = 호기 구간 / 호기 시작 확정 지점
     회색 선     = 판정 보류 (시작 후 12초 안정화, 또는 신호가 너무 작음)
   "상승 = 흡기" 가 기본이다. 센서가 반대로 동작하면 --invert 를 붙인다.
-  실시간 경로와 --replay 경로가 같은 클래스를 쓰므로 두 결과가 구조적으로 동일하다.
 
 실행 모드
   실시간    python visualizer.py --port COM5          [--invert]
   포트 목록  python visualizer.py --list
   모의 신호  python visualizer.py --demo            (보드 없이 화면/저장 기능 점검)
-  CSV 재생  python visualizer.py --replay ../data/sample_breath_log.csv
+  CSV 재생  python visualizer.py --replay ../data/breath_20261104_101500.csv
                                   [--start 10 --duration 30] [--no-show]
-            → 보고서용 PNG 3장 생성 (재현 가능)
-               *_raw.png (측정값만) / *_filtered.png (필터링 값만) / *_both.png (2단)
+            → 보고서용 PNG 3장 (*_raw.png / *_filtered.png / *_both.png)
+            v1(WROOM-32) 시절 CSV(mv 열) 도 그대로 읽는다.
 
 실시간 창 단축키
-  s : 현재 화면을 report_images/ 에 PNG 저장 (TC-04)
+  s : 현재 화면을 report_images/ 에 PNG 저장
   p : 일시정지/재개 (정지 중에도 수신·CSV 기록은 계속됨)
   q : 종료 (종료 시 마지막 화면 자동 저장)
-
-구조
-  [수신 스레드] 시리얼 readline → 파싱 → queue
-  [GUI 스레드 ] 타이머(50 ms)마다 queue 를 비우며 버퍼·CSV 갱신 → 다시 그리기
-  GUI 렌더링이 느려져도 수신 스레드는 막히지 않으므로 샘플 유실이 생기지 않는다.
 """
 
 from __future__ import annotations
 
 import argparse
-import csv
 import math
 import queue
-import random
 import sys
-import threading
 import time
 from collections import deque
-from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT.parent / "common"))          # 저장소 루트의 common/
+from embrace_link import (DEFAULT_BAUD, DEFAULT_FS, CsvLogger, DemoDevice,  # noqa: E402
+                          Source, Timeline, list_ports, open_source, read_csv, timestamp)
+from plotting import setup_matplotlib, shade_faults, stamp_demo  # noqa: E402
+
 DATA_DIR = ROOT / "data"
 IMG_DIR = ROOT / "report_images"
+CHANNEL = "breath"
 
-DEFAULT_BAUD = 115200
-DEFAULT_FS = 50.0        # 펌웨어 PERIOD_MS=20 과 일치
 DEFAULT_WINDOW_S = 20.0  # 화면에 보이는 시간 폭
-DEMO_MA_WINDOW = 10      # 펌웨어 MA_WINDOW 와 동일
 
-# 펌웨어 sensor_app.cpp 의 OPEN_MV / SHORT_MV 와 같은 값
+# 펌웨어 config.h 의 PULLUP_OPEN_MV / PULLUP_SHORT_MV 와 같은 값
 SAT_HIGH_MV = 3000   # 이상이면 ADC 상한 포화 (단선 또는 센서 저항 >> 풀업)
 SAT_LOW_MV = 60      # 이하면 단락
 SAT_CHECK_N = 25     # 최근 0.5 s 전부가 범위 밖일 때만 경고
@@ -77,7 +68,6 @@ FILT_COLOR = "#1f5fbf"
 INHALE_COLOR = "#d62728"   # 흡기 = 빨강 (원본 레포 config.py 와 동일)
 EXHALE_COLOR = "#2ca02c"   # 호기 = 초록
 UNKNOWN_COLOR = "#a0a7b1"  # 판정 보류 = 회색
-
 
 # =============================================================================
 #  2차 Butterworth 대역통과 — 한 샘플씩 처리 (미래 샘플 미참조 = 실시간 가능)
@@ -280,247 +270,69 @@ def phase_legend(ax):
 
 
 # =============================================================================
-#  데이터 모델 / 파싱
-# =============================================================================
-@dataclass(frozen=True)
-class Sample:
-    seq: int
-    t_ms: int
-    mv: float
-    ma: float
-
-
-def parse_sample(line: str) -> Sample | None:
-    """데이터 줄이면 Sample, 아니면 None. '#' 진단 줄과 깨진 줄은 걸러진다."""
-    if not line or line.startswith("#"):
-        return None
-    parts = line.split("\t")
-    if len(parts) != 4:
-        return None
-    try:
-        return Sample(int(parts[0]), int(parts[1]), float(parts[2]), float(parts[3]))
-    except ValueError:
-        return None
-
-
-# =============================================================================
-#  입력 소스 (스레드) — 실제 시리얼 / 모의 신호
-# =============================================================================
-class Source(threading.Thread):
-    """샘플은 self.q 로, 진단 메시지는 self.diag 로 내보낸다."""
-
-    def __init__(self) -> None:
-        super().__init__(daemon=True)
-        self.q: queue.Queue[Sample] = queue.Queue()
-        self.diag: queue.Queue[str] = queue.Queue()
-        self.stop_evt = threading.Event()
-        self.error: str | None = None
-        self.label = ""
-
-    def stop(self) -> None:
-        self.stop_evt.set()
-
-
-class SerialSource(Source):
-    def __init__(self, port: str, baud: int) -> None:
-        super().__init__()
-        import serial  # 지연 import: --replay 모드는 pyserial 없이도 동작
-
-        self.label = f"{port} @ {baud}"
-        try:
-            self.ser = serial.Serial(port, baud, timeout=0.5)
-        except serial.SerialException as e:
-            print(f"\n[오류] 포트를 열지 못했습니다: {e}")
-            print("  - 포트 이름 확인, Arduino IDE 의 시리얼 모니터/플로터가 닫혀 있는지 확인")
-            list_ports()
-            sys.exit(1)
-        # ESP32 는 포트를 열면 리셋된다 → 부팅 로그가 지나갈 때까지 대기 후 버퍼 비움
-        time.sleep(1.5)
-        self.ser.reset_input_buffer()
-
-    def run(self) -> None:
-        try:
-            while not self.stop_evt.is_set():
-                raw = self.ser.readline()
-                if not raw:
-                    continue
-                line = raw.decode("utf-8", errors="ignore").strip()
-                s = parse_sample(line)
-                if s is not None:
-                    self.q.put(s)
-                elif line.startswith("#"):
-                    self.diag.put(line)
-        except Exception as e:  # USB 분리 등
-            self.error = f"시리얼 연결 끊김: {e}"
-        finally:
-            try:
-                self.ser.close()
-            except Exception:
-                pass
-
-
-class DemoSource(Source):
-    """보드 없이 화면·저장 기능을 점검하기 위한 모의 호흡 신호 (약 15 bpm)."""
-
-    def __init__(self, fs: float) -> None:
-        super().__init__()
-        self.fs = fs
-        self.label = "DEMO (모의 신호)"
-
-    def run(self) -> None:
-        period = 1.0 / self.fs
-        buf: deque[float] = deque(maxlen=DEMO_MA_WINDOW)
-        rng = random.Random(7)
-        seq, t0, phase = 0, time.perf_counter(), 0.0
-        self.diag.put("# AirRhythm DEMO fs=%.0fHz" % self.fs)
-        while not self.stop_evt.is_set():
-            t = seq * period
-            bpm = 15 + 2 * math.sin(2 * math.pi * t / 60)       # 호흡수 13~17 회/분 완만한 변동
-            phase += 2 * math.pi * bpm / 60 * period            # 위상은 적분해야 주기가 안 흔들린다
-            breath = 45 * (math.sin(phase) + 0.25 * math.sin(2 * phase + 0.6))
-            drift = 15 * math.sin(2 * math.pi * t / 90)          # 자세 변화로 인한 기저선 이동
-            mv = 900 + breath + drift + rng.gauss(0, 6)
-            if 40 < t % 60 < 41.5:                                # 주기적 움직임 아티팩트
-                mv += rng.gauss(0, 40)
-            mv = round(mv)
-            buf.append(mv)
-            ma = round(sum(buf) / len(buf))
-            self.q.put(Sample(seq, int(t * 1000), mv, ma))
-            seq += 1
-            # 절대 시각 기준 대기 (누적 오차 없음)
-            sleep = t0 + seq * period - time.perf_counter()
-            if sleep > 0:
-                time.sleep(sleep)
-
-
-def list_ports() -> None:
-    try:
-        from serial.tools import list_ports as lp
-    except ImportError:
-        print("pyserial 이 필요합니다: pip install -r requirements.txt")
-        return
-    ports = list(lp.comports())
-    if not ports:
-        print("연결된 시리얼 포트가 없습니다. (USB 케이블이 데이터 전송용인지, CP210x 드라이버 설치 확인)")
-        return
-    print("사용 가능한 포트:")
-    for p in ports:
-        print(f"  {p.device:<10} {p.description}")
-
-
-# =============================================================================
-#  공통 그래프 스타일 (보고서 품질)
-# =============================================================================
-def setup_matplotlib(headless: bool = False):
-    import matplotlib
-
-    if headless:
-        matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-    from matplotlib import font_manager
-
-    # 한글 폰트: 없으면 그래프의 한글이 □ 로 깨진다
-    available = {f.name for f in font_manager.fontManager.ttflist}
-    for name in ("Malgun Gothic", "AppleGothic", "NanumGothic", "Noto Sans CJK KR", "Noto Sans KR"):
-        if name in available:
-            plt.rcParams["font.family"] = name
-            break
-    plt.rcParams.update({
-        "axes.unicode_minus": False,
-        "axes.spines.top": False,
-        "axes.spines.right": False,
-        "axes.grid": True,
-        "grid.alpha": 0.25,
-        "figure.dpi": 100,
-        "savefig.dpi": 200,
-    })
-    return plt
-
-
-def timestamp() -> str:
-    return datetime.now().strftime("%Y%m%d_%H%M%S")
-
-
-# =============================================================================
 #  실시간 모드
 # =============================================================================
 class LiveApp:
     def __init__(self, src: Source, window_s: float, fs: float, log_csv: bool,
-                 polarity: int = +1) -> None:
+                 polarity: int = +1, is_demo: bool = False) -> None:
         self.src = src
         self.fs = fs
         self.window_s = window_s
+        self.is_demo = is_demo
         n = int(window_s * fs * 1.2)
         self.t: deque[float] = deque(maxlen=n)
         self.mv: deque[float] = deque(maxlen=n)
-        self.ma: deque[float] = deque(maxlen=n)
         self.bp: deque[float] = deque(maxlen=n)
         self.ph: deque[int] = deque(maxlen=n)
         self.events: deque[tuple] = deque(maxlen=200)   # (t, y, "inhale"|"exhale")
         self.polarity = polarity
         self.filt = BandpassButter2(fs)
         self.det = SlopeDetector(polarity)
+        self.tl = Timeline(fs)
 
-        self.t0_ms: int | None = None
-        self.last_seq: int | None = None
-        self.received = 0
-        self.dropped = 0
         self.dev_fs: str = "-"
         self.warn: str = ""
+        self.dev_fault = 0              # 기기 flags 의 breath 상태 (0 정상, 1 단선, 2 단락)
+        self.no_channel = False
         self.paused = False
         self.arrivals: deque[float] = deque()
 
-        self.csv_file = None
-        self.csv_writer = None
+        self.logger: CsvLogger | None = None
         if log_csv:
-            DATA_DIR.mkdir(exist_ok=True)
-            self.csv_path = DATA_DIR / f"breath_{timestamp()}.csv"
-            self.csv_file = open(self.csv_path, "w", newline="", encoding="utf-8")
-            self.csv_writer = csv.writer(self.csv_file)
-            self.csv_writer.writerow(["host_time", "seq", "t_ms", "elapsed_s",
-                                      "mv", "ma_mv", "bp_mv", "phase", "event"])
+            self.logger = CsvLogger(DATA_DIR / f"breath_{timestamp()}.csv", src.info,
+                                    extra_cols=["bp_mv", "phase", "event"], note="breath-sensor")
 
     # --- 수신 데이터 반영 -----------------------------------------------------
     def drain(self) -> None:
         now = time.perf_counter()
         while True:
             try:
-                s = self.src.q.get_nowait()
+                f = self.src.q.get_nowait()
             except queue.Empty:
                 break
-            # 시퀀스 번호로 유실/리셋 감지
-            if self.last_seq is not None:
-                gap = s.seq - self.last_seq - 1
-                if gap > 0:
-                    self.dropped += gap
-                elif s.seq <= self.last_seq:          # 보드 리셋 → 시간축 재설정
-                    self.t0_ms = None
-                    self.warn = "보드 리셋 감지"
-                    self.filt = BandpassButter2(self.fs)   # 신호가 끊겼으니 필터도 새로 시작
-                    self.det = SlopeDetector(self.polarity)
-            self.last_seq = s.seq
-            if self.t0_ms is None:
-                # 첫 샘플이면 0 s, 리셋 후면 직전 시각 + 1주기에서 이어 그린다
-                resume_ms = (self.t[-1] * 1000 + 1000 / self.fs) if self.t else 0
-                self.t0_ms = s.t_ms - resume_ms
-            elapsed = (s.t_ms - self.t0_ms) / 1000.0   # 기기 시각 기준 시간축
+            elapsed, _gap, reset = self.tl.update(f)
+            if reset:                                   # 보드 리셋 → 필터도 새로 시작
+                self.warn = "보드 리셋 감지"
+                self.filt = BandpassButter2(self.fs)
+                self.det = SlopeDetector(self.polarity)
+            if CHANNEL not in f.values:
+                self.no_channel = True
+                continue
+            mv = f.values[CHANNEL]
+            self.dev_fault = f.flag(CHANNEL)
 
             self.t.append(elapsed)
-            self.mv.append(s.mv)
-            self.ma.append(s.ma)
-            bp = self.filt.update(s.mv)
+            self.mv.append(mv)
+            bp = self.filt.update(mv)
             ev = self.det.update(elapsed, bp)
             if ev:
                 self.events.append((ev["t"], ev["y"], ev["type"]))
             self.bp.append(bp)
             self.ph.append(self.det.phase)
-            self.received += 1
             self.arrivals.append(now)
-            if self.csv_writer:
-                self.csv_writer.writerow([datetime.now().isoformat(timespec="milliseconds"),
-                                          s.seq, s.t_ms, f"{elapsed:.3f}", s.mv, s.ma,
-                                          f"{bp:.2f}", PHASE_NAME[self.det.phase],
-                                          ev["type"] if ev else ""])
+            if self.logger:
+                self.logger.write(f, elapsed, [f"{bp:.2f}", PHASE_NAME[self.det.phase],
+                                               ev["type"] if ev else ""])
         while self.arrivals and self.arrivals[0] < now - 3.0:
             self.arrivals.popleft()
 
@@ -531,12 +343,8 @@ class LiveApp:
                 break
             if d.startswith("# fs="):
                 self.dev_fs = d.split()[1].split("=")[1]
-            elif "WARN" in d:
-                self.warn = d.lstrip("# ")
-                print(d)
-            elif "sensor_ok" in d:
-                self.warn = ""
-                print(d)
+            elif d.startswith(("# EMBRACE", "# ch ", "# columns")):
+                continue                                 # 헤더는 CSV 에 남는다
             else:
                 print(d)
 
@@ -550,9 +358,10 @@ class LiveApp:
     def run(self) -> None:
         plt = setup_matplotlib()
         from matplotlib.animation import FuncAnimation
+        import numpy as np
 
         fig, (ax, ax_f) = plt.subplots(2, 1, figsize=(11, 7), sharex=True)
-        fig.canvas.manager.set_window_title("Air-Rhythm 실시간 호흡 파형")
+        fig.canvas.manager.set_window_title("EMBRACE 실시간 호흡 파형")
         (l_raw,) = ax.plot([], [], color=RAW_COLOR, lw=0.9)
         l_ph = draw_phase_line(ax_f, [0.0], [0.0], [0])
         (m_in,) = ax_f.plot([], [], ls="", marker="^", ms=9, color=INHALE_COLOR)
@@ -572,6 +381,7 @@ class LiveApp:
         warn_txt = ax.text(0.5, 0.95, "", transform=ax.transAxes, ha="center", va="top",
                            fontsize=11, color="#c0392b", fontweight="bold")
         fig.suptitle(f"호흡 인장 센서 파형  ·  {self.src.label}", x=0.01, ha="left", fontsize=11.5)
+        stamp_demo(fig, self.is_demo)
         fig.tight_layout()
 
         def save(tag: str = "") -> None:
@@ -589,21 +399,23 @@ class LiveApp:
 
         def update(_frame):
             self.drain()
-            # 기기 경고 줄은 부팅 직후 한 번만 오는데, 포트를 열 때 버퍼를 비우면서
-            # 사라질 수 있다 → 수신 데이터로 직접 포화 여부를 판정한다
             recent = list(self.mv)[-SAT_CHECK_N:]
             if self.src.error:
                 warn_txt.set_text(self.src.error)
-            elif len(recent) == SAT_CHECK_N and min(recent) >= SAT_HIGH_MV:
+            elif self.no_channel and not self.t:
+                warn_txt.set_text("breath 채널이 꺼져 있음 (config.h 의 ENABLE_BREATH 확인)")
+            elif self.dev_fault == 1 or (len(recent) == SAT_CHECK_N and min(recent) >= SAT_HIGH_MV):
                 warn_txt.set_text(f"ADC 상한 포화 ({recent[-1]:.0f} mV): "
-                                  "센서 단선 또는 센서 저항이 풀업보다 훨씬 큼")
-            elif len(recent) == SAT_CHECK_N and max(recent) <= SAT_LOW_MV:
+                                  "센서 단선 또는 센서 저항이 풀업 저항보다 훨씬 큼")
+            elif self.dev_fault == 2 or (len(recent) == SAT_CHECK_N and max(recent) <= SAT_LOW_MV):
                 warn_txt.set_text(f"ADC 하한 ({recent[-1]:.0f} mV): 센서 단락 의심")
+            elif not self.src.info.columns and not self.t:
+                warn_txt.set_text("기기 헤더 기다리는 중… (최대 5초)")
             else:
-                warn_txt.set_text("")
+                warn_txt.set_text(self.warn if self.warn == "보드 리셋 감지" else "")
             status.set_text(
                 f"수신 {self.host_rate():5.1f} Hz | 기기 fs {self.dev_fs} | "
-                f"샘플 {self.received} | 유실 {self.dropped}"
+                f"샘플 {self.tl.received} | 유실 {self.tl.dropped}"
                 + ("  [일시정지]" if self.paused else "")
             )
             if self.paused or not self.t:
@@ -612,7 +424,6 @@ class LiveApp:
             t_end = self.t[-1]
             t_start = max(0.0, t_end - self.window_s)
             l_raw.set_data(self.t, self.mv)
-            import numpy as np
             tt_a = np.fromiter(self.t, float); bp_a = np.fromiter(self.bp, float)
             ph_a = np.fromiter(self.ph, int)
             for line, code in zip(l_ph, (+1, -1, 0)):
@@ -636,7 +447,6 @@ class LiveApp:
             lo, hi = min(vis), max(vis)
             mid, half = (lo + hi) / 2, max((hi - lo) / 2 * 1.15, 20.0)
             ax.set_ylim(mid - half, mid + half)
-            # 필터링 값은 0 중심 대칭
             peak = max(abs(v) for tt, v in zip(self.t, self.bp) if tt >= t_start)
             lim = max(peak * 1.2, 10.0)
             ax_f.set_ylim(-lim, lim)
@@ -654,9 +464,10 @@ class LiveApp:
                 save("_final")
             self.src.stop()
             self.src.join(timeout=2)
-            if self.csv_file:
-                self.csv_file.close()
-                print(f"[CSV]  {self.csv_path}  ({self.received} 샘플, 유실 {self.dropped})")
+            if self.logger:
+                self.logger.close()
+                if self.logger.rows:
+                    print(f"[CSV]  {self.logger.path}  ({self.logger.rows} 샘플, 유실 {self.tl.dropped})")
             print_detect_summary(self.det)
 
 
@@ -677,16 +488,13 @@ def print_detect_summary(det: SlopeDetector) -> None:
 
 def run_replay(path: Path, start: float, duration: float | None, show: bool,
                polarity: int = +1) -> list[Path]:
-    t, mv = [], []
-    with open(path, newline="", encoding="utf-8") as f:
-        for row in csv.DictReader(f):
-            try:
-                tt = float(row["elapsed_s"]); x = float(row["mv"])
-            except (KeyError, ValueError):
-                continue
-            t.append(tt); mv.append(x)
+    rec = read_csv(path)
+    t_all, mv_all, fl_all = rec.col("elapsed_s"), rec.col(CHANNEL), rec.flags(CHANNEL)
+    keep = [i for i, (a, b) in enumerate(zip(t_all, mv_all)) if a == a and b == b]   # NaN 제외
+    t = [t_all[i] for i in keep]; mv = [mv_all[i] for i in keep]; fl = [fl_all[i] for i in keep]
     if not t:
-        sys.exit(f"[오류] {path} 에서 데이터를 읽지 못했습니다. (elapsed_s, mv 열 필요)")
+        sys.exit(f"[오류] {path} 에서 호흡 데이터를 읽지 못했습니다. (elapsed_s 와 breath(또는 mv) 열 필요)")
+    is_demo = rec.info.header.get("board") == "DEMO" or "DEMO" in path.name.upper()
 
     # 필터는 파일 "처음부터" 돌린 뒤 구간을 자른다 → 구간 시작부에 과도응답이 남지 않는다
     filt = BandpassButter2(DEFAULT_FS)
@@ -705,7 +513,7 @@ def run_replay(path: Path, start: float, duration: float | None, show: bool,
     if not idx:
         sys.exit(f"[오류] {start}~{end}s 구간에 데이터가 없습니다. (전체 0~{t[-1]:.1f}s)")
     t = [t[i] for i in idx]; mv = [mv[i] for i in idx]; bp = [bp[i] for i in idx]
-    ph = [ph[i] for i in idx]
+    ph = [ph[i] for i in idx]; fl = [fl[i] for i in idx]
     events = [e for e in events if t[0] <= e["t"] <= t[-1]]
     if start < 10:
         print("[참고] 측정 시작 후 약 10초는 필터가 자리를 잡는 구간입니다. "
@@ -719,6 +527,7 @@ def run_replay(path: Path, start: float, duration: float | None, show: bool,
 
     def draw_raw(ax):
         ax.plot(t, mv, color=RAW_COLOR, lw=0.8)
+        shade_faults(ax, t, fl)
         ax.set_ylabel("mV"); ax.set_title(raw_title, loc="left", fontsize=10.5)
 
     def draw_bp(ax):
@@ -735,22 +544,22 @@ def run_replay(path: Path, start: float, duration: float | None, show: bool,
     IMG_DIR.mkdir(exist_ok=True)
     outs: list[Path] = []
 
-    # 1·2) 측정값만 / 필터링 값만 — 각각 따로
     for tag, draw in (("raw", draw_raw), ("filtered", draw_bp)):
         fig, ax = plt.subplots(figsize=(11, 3.8))
         draw(ax)
         ax.set_xlim(t[0], t[-1]); ax.set_xlabel("시간 (s)")
         fig.suptitle(head, x=0.01, ha="left", fontsize=10, color="#555")
+        stamp_demo(fig, is_demo)
         fig.tight_layout()
         out = IMG_DIR / f"{path.stem}_{span}_{tag}.png"
         fig.savefig(out, bbox_inches="tight"); plt.close(fig)
         outs.append(out); print(f"[저장] {out}")
 
-    # 3) 두 개를 위아래로 (비교용)
     fig, (a1, a2) = plt.subplots(2, 1, figsize=(11, 6.5), sharex=True)
     draw_raw(a1); draw_bp(a2)
     a2.set_xlim(t[0], t[-1]); a2.set_xlabel("시간 (s)")
     fig.suptitle(f"호흡 인장 센서 파형  ·  {head}", x=0.01, ha="left", fontsize=11.5)
+    stamp_demo(fig, is_demo)
     fig.tight_layout()
     out = IMG_DIR / f"{path.stem}_{span}_both.png"
     fig.savefig(out, bbox_inches="tight")
@@ -763,7 +572,7 @@ def run_replay(path: Path, start: float, duration: float | None, show: bool,
 
 # =============================================================================
 def main() -> None:
-    ap = argparse.ArgumentParser(description="Air-Rhythm 실시간 호흡 파형 시각화")
+    ap = argparse.ArgumentParser(description="EMBRACE 실시간 호흡 파형 시각화")
     g = ap.add_mutually_exclusive_group(required=True)
     g.add_argument("--port", help="시리얼 포트 (예: COM5, /dev/ttyUSB0)")
     g.add_argument("--list", action="store_true", help="사용 가능한 포트 목록")
@@ -787,9 +596,9 @@ def main() -> None:
                    polarity=-1 if args.invert else +1)
         return
 
-    src: Source = DemoSource(DEFAULT_FS) if args.demo else SerialSource(args.port, args.baud)
+    src = open_source(args.port, args.baud, demo=args.demo, device=DemoDevice(channels=[CHANNEL]))
     LiveApp(src, args.window, DEFAULT_FS, log_csv=not args.no_log,
-            polarity=-1 if args.invert else +1).run()
+            polarity=-1 if args.invert else +1, is_demo=args.demo).run()
 
 
 if __name__ == "__main__":
