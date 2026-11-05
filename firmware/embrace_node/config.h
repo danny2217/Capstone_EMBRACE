@@ -31,10 +31,10 @@ namespace cfg {
 //  1) 채널 ON/OFF
 // ---------------------------------------------------------------------------
 constexpr bool ENABLE_BREATH = true;   // 가슴 스트랩 호흡 인장 센서
-constexpr bool ENABLE_GRIP_L = true;   // 가방끈 왼쪽 악력 (ZD10-100)
-constexpr bool ENABLE_GRIP_R = true;   // 가방끈 오른쪽 악력 (ZD10-100)
-constexpr bool ENABLE_CHEST  = true;   // 가슴 압박 (ZD10-100 + 500원 동전 집중판)
-constexpr bool ENABLE_BACK   = true;   // 등 압박   (ZD10-100 + 500원 동전 집중판)
+constexpr bool ENABLE_GRIP_L = false;   // 가방끈 왼쪽 악력 (ZD10-100)
+constexpr bool ENABLE_GRIP_R = false;   // 가방끈 오른쪽 악력 (ZD10-100)
+constexpr bool ENABLE_CHEST  = false;   // 가슴 압박 (ZD10-100, 집중판 없음)
+constexpr bool ENABLE_BACK   = false;   // 등 압박   (ZD10-100, 집중판 없음)
 
 // ---------------------------------------------------------------------------
 //  2) 핀 — ESP32-S3 의 ADC1 은 GPIO1~10 뿐이다 (그 밖이면 컴파일 오류)
@@ -52,21 +52,34 @@ constexpr uint8_t PIN_BACK   = 8;    // ADC1_CH7
 //  R_ref 고르는 법: 측정할 구간 양 끝의 센서 저항 R1, R2 를 재서 R_ref ≈ √(R1·R2)
 //                   (그때 두 점의 전압 차가 가장 크다)
 //  R_bias        : 동작 구간 센서 저항의 10배 이상 (감도를 거의 깎지 않으면서 단선 검출)
-constexpr uint32_t BREATH_R_PU_OHM = 0;         // 호흡 외부 풀업. 새 센서 이완 저항과 같은 값 권장
-constexpr uint32_t GRIP_R_REF_OHM  = 10000;     // 악력: 하중이 커서(수백 g) 작은 R_ref
+constexpr uint32_t BREATH_R_PU_OHM = 0;         // 호흡 외부 풀업 (Ω). 0 = 외부 저항 없음
+
+// 저항 없이 호흡 센서를 쓰는 방법 (BREATH_R_PU_OHM = 0 일 때만 적용)
+//   BREATH_SOURCE_PIN = 0  : 칩 내부 풀업(약 45 kΩ) 사용. 센서 저항이 수십 kΩ 일 때 맞다.
+//   BREATH_SOURCE_PIN = 15 : GPIO15 를 "약한 세기(drive cap 0)의 HIGH 출력" 으로 켜서
+//                            풀업 저항 대신 쓴다. 핀 내부 트랜지스터가 약 100~300 Ω 의
+//                            풀업처럼 동작한다 → 센서가 수백 Ω 이하일 때 신호가 수십 배 커진다.
+//                            배선: GPIO15 ─(점퍼선)─ GPIO4 ─[호흡 센서]─ GND  (3V3 는 쓰지 않음)
+//   ⚠ 시험대(bench)용이다. 출력 세기는 칩·온도마다 다르고 데이터시트로 보증되지 않는다.
+//     센서로 약 5~15 mA 가 계속 흐르므로, 제품에서는 실제 저항 R_pu 로 바꾼다.
+constexpr uint8_t  BREATH_SOURCE_PIN = 0;     // 0 = 내부 풀업 (11/4 시험에서 집게 간격을 넓혀 정상 동작 확인)
+//  ★ R_REF 를 0 으로 두면 외부 저항 없이 "칩 내부 풀다운(약 45 kΩ, 칩마다 30~80 kΩ)" 을 R_ref 로 쓴다.
+//    배선: 3V3 ─[ZD10-100]─ GPIO  (선 두 개, 저항 없음). 11/5 현재 저항이 없어 이 방식을 쓴다.
+//    이때는 R_bias 도 없으므로 FSR_HAS_BIAS = false (단선 검출 꺼짐 — 아래 주의 참고).
+constexpr uint32_t GRIP_R_REF_OHM  = 0;         // 악력: 0 = 내부 풀다운. 저항이 생기면 10000
 constexpr uint32_t GRIP_R_BIAS_OHM = 150000;    //   무부하 기준 약 206 mV
-constexpr uint32_t COMP_R_REF_OHM  = 470000;    // 압박: 하중이 작아서(21~32 g) 큰 R_ref
+constexpr uint32_t COMP_R_REF_OHM  = 0;         // 압박: 0 = 내부 풀다운. 저항이 생기면 470000
 constexpr uint32_t COMP_R_BIAS_OHM = 4700000;   //   무부하 기준 약 300 mV
 
 // 바이어스 저항을 아직 안 달았으면 false.
 //  → 무부하 FSR 은 0 V 이고 단선도 0 V 라서 둘을 구분할 수 없다.
 //    false 면 FSR 채널의 '단선' 판정을 끈다 (헤더에 open_check=off 로 표시).
 //    ⚠ 압박 채널은 단선을 '압력 0' 으로 읽으면 계속 가압될 수 있다. 시제품에서는 반드시 true.
-constexpr bool FSR_HAS_BIAS = true;
+constexpr bool FSR_HAS_BIAS = false;           // 바이어스 저항 없음 (저항이 생기면 true)
 
 // ---------------------------------------------------------------------------
 //  4) 압박 채널 센서 종류 — 전환 시 이 줄만 바꾼다
-//     FSR_ZD10      : ZD10-100 + 동전 집중판 (현재)
+//     FSR_ZD10      : ZD10-100, 집중판 없이 감지부 단독 하중 (현재)
 //     XGZP6847A_33  : 공압 라인 압력센서 XGZP6847A010KPG33 (0~10 kPa, 출력 0.2~2.7 V)
 //                     → 센서 출력을 GPIO7/8 에 직접 연결, 분압 저항 불필요
 // ---------------------------------------------------------------------------
@@ -84,7 +97,8 @@ constexpr float SENSE_DIAMETER_MM = 10.0f;
 constexpr uint32_t BAUD       = 115200;
 constexpr uint32_t PERIOD_MS  = 20;     // 50 Hz. 호흡(0.1~0.7 Hz)·악력(수 Hz) 대비 충분
 constexpr uint8_t  DISCARD    = 1;      // 채널 전환 직후 버리는 변환 수 (크로스토크 방지)
-constexpr uint8_t  OVERSAMPLE = 8;      // 1회 측정당 평균낼 변환 수
+constexpr uint8_t  OVERSAMPLE = 16;     // 1회 측정당 평균낼 변환 수 (8→16: 잡음 약 ÷1.4 추가 감소)
+                                        // 변환 1회 약 52 us (11/4 실측) → 5채널 × 17회 ≈ 4.4 ms. '# fs' 의 work_max ≤ 5000us 확인
 constexpr uint8_t  MA_WINDOW  = 10;     // 이동 평균 길이 0.2 s (군지연 약 90 ms)
 constexpr bool     SEND_MA    = false;  // true 면 각 채널의 이동평균 열(<이름>_ma)도 보낸다
 

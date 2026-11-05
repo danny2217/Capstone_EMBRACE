@@ -14,6 +14,18 @@ static_assert(cfg::ENABLE_BREATH || cfg::ENABLE_GRIP_L || cfg::ENABLE_GRIP_R ||
                   cfg::ENABLE_CHEST || cfg::ENABLE_BACK,
               "ENABLE_* 중 하나 이상은 true 여야 한다");
 static_assert(cfg::OVERSAMPLE >= 1, "OVERSAMPLE 은 1 이상");
+
+// 호흡 소스 핀 검사: 부팅·USB·플래시/PSRAM·UART0 핀과 켜진 ADC 핀은 쓸 수 없다
+constexpr uint8_t SRC = cfg::BREATH_SOURCE_PIN;
+static_assert(SRC == 0 || (SRC <= 48 && SRC != 3 && SRC != 19 && SRC != 20 && SRC != 43 && SRC != 44 &&
+                           SRC != 45 && SRC != 46 && !(SRC >= 22 && SRC <= 37)),
+              "BREATH_SOURCE_PIN 은 0(사용 안 함) 또는 9~18, 21, 38~42, 47, 48 같은 빈 GPIO 여야 한다");
+static_assert(SRC == 0 || ((!cfg::ENABLE_BREATH || SRC != cfg::PIN_BREATH) &&
+                           (!cfg::ENABLE_GRIP_L || SRC != cfg::PIN_GRIP_L) &&
+                           (!cfg::ENABLE_GRIP_R || SRC != cfg::PIN_GRIP_R) &&
+                           (!cfg::ENABLE_CHEST || SRC != cfg::PIN_CHEST) &&
+                           (!cfg::ENABLE_BACK || SRC != cfg::PIN_BACK)),
+              "BREATH_SOURCE_PIN 이 센서 핀과 겹친다");
 static_assert(cfg::PERIOD_MS >= 10, "PERIOD_MS 가 너무 짧다 (전송 대역폭 초과)");
 
 static Channel g_ch[MAX_CH];

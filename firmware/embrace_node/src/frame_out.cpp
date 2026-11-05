@@ -12,6 +12,7 @@
 //  flags 열: 채널당 한 글자 (0 정상, 1 단선, 2 단락), 데이터 열 순서대로 이어 붙임. 예) 00010
 #include "frame_out.h"
 #include "../config.h"
+#include "adc_reader.h"
 #include "channel.h"
 #include "frame.h"
 #include "sense_task.h"
@@ -39,10 +40,14 @@ static void printHeader() {
     Serial.printf("# ch %s pin=%u kind=%s", c.name, c.pin, kindName(c.kind));
     switch (c.kind) {
       case ChKind::RubberPullup:
-        printOhm("r_pu", c.rRef);
+        if (c.rRef) Serial.printf(" r_pu=%lu", (unsigned long)c.rRef);
+        else if (breathUsesSourcePin())                    // 저항 대신 GPIO 약출력을 풀업으로
+          Serial.printf(" r_pu=gpio%u_drive0", cfg::BREATH_SOURCE_PIN);
+        else Serial.print(" r_pu=internal");      // BREATH_R_PU_OHM=0 → 칩 내부 풀업 사용
         break;
       case ChKind::Fsr:
-        printOhm("r_ref", c.rRef);
+        if (c.rRef) Serial.printf(" r_ref=%lu", (unsigned long)c.rRef);
+        else Serial.print(" r_ref=internal_pd");    // R_REF=0 → 칩 내부 풀다운 사용
         printOhm("r_bias", c.rBias);
         Serial.printf(" open_check=%s", c.lowCheck ? "on" : "off");
         break;

@@ -352,8 +352,10 @@ def main() -> None:
         sys.exit(f"[오류] 기기가 {ch} 열을 보내지 않습니다 (config.h 의 ENABLE_* 확인)")
     sense = args.sense_mm or src.info.channel_num(ch, "sense_mm") or 10.0
     kind = src.info.channels.get(ch).kind if ch in src.info.channels else "?"
-    rr = src.info.channel_num(ch, "r_ref") or 0
-    print(f"\n{CHANNEL_KO[ch]} 채널 · 센서 {kind} · R_ref {rr / 1000:.0f} kΩ · 감지부 Ø{sense} mm (집중판 없음)"
+    rr_raw = src.info.channels[ch].params.get("r_ref", "unknown") if ch in src.info.channels else "unknown"
+    rr = src.info.channel_num(ch, "r_ref") if rr_raw.isdigit() else rr_raw
+    rr_txt = f"{rr / 1000:.0f} kΩ" if isinstance(rr, float) else ("내부 풀다운 약 45 kΩ" if rr_raw == "internal_pd" else rr_raw)
+    print(f"\n{CHANNEL_KO[ch]} 채널 · 센서 {kind} · R_ref {rr_txt} · 감지부 Ø{sense} mm (집중판 없음)"
           f"\n  20 mmHg ≈ {mmhg_to_grams(20, sense):.1f} g, 30 mmHg ≈ {mmhg_to_grams(30, sense):.1f} g"
           f"  (500원 동전 {mmhg_to_grams(20, sense) / COIN_G:.1f}개, {mmhg_to_grams(30, sense) / COIN_G:.1f}개)\n")
 
