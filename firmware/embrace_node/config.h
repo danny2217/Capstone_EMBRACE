@@ -31,10 +31,10 @@ namespace cfg {
 //  1) 채널 ON/OFF
 // ---------------------------------------------------------------------------
 constexpr bool ENABLE_BREATH = true;   // 가슴 스트랩 호흡 인장 센서
-constexpr bool ENABLE_GRIP_L = false;   // 가방끈 왼쪽 악력 (ZD10-100)
-constexpr bool ENABLE_GRIP_R = false;   // 가방끈 오른쪽 악력 (ZD10-100)
-constexpr bool ENABLE_CHEST  = false;   // 가슴 압박 (ZD10-100, 집중판 없음)
-constexpr bool ENABLE_BACK   = false;   // 등 압박   (ZD10-100, 집중판 없음)
+constexpr bool ENABLE_GRIP_L = true;   // 가방끈 왼쪽 악력 (ZD10-100)
+constexpr bool ENABLE_GRIP_R = true;   // 가방끈 오른쪽 악력 (ZD10-100)
+constexpr bool ENABLE_CHEST  = true;   // 가슴 압박 (ZD10-100, 집중판 없음)
+constexpr bool ENABLE_BACK   = true;   // 등 압박   (ZD10-100, 집중판 없음)
 
 // ---------------------------------------------------------------------------
 //  2) 핀 — ESP32-S3 의 ADC1 은 GPIO1~10 뿐이다 (그 밖이면 컴파일 오류)
