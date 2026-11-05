@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# 압축 파일·OS 잡파일·편집기
+*.zip
+Thumbs.db
+desktop.ini
+.DS_Store
+.vscode/
+build/
+
+# 실측 데이터는 커밋하지 않는다 (팀 합의 전까지). 모의 데이터(DEMO_*)만 커밋한다.
+#  - CSV: 실측 기록, JSON: 보정 결과, TXT: 통합 모니터 요약
+#  - 보고서용 그림(report_images/*.png)은 커밋해도 된다
+**/data/*.csv
+**/data/*.json
+**/data/*.txt
+!**/data/DEMO_*

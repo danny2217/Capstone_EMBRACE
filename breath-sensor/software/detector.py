@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""Air-Rhythm 흡기/호기 판별기 — 제품 연동용 경량판
+"""EMBRACE 흡기/호기 판별기 — 제품 연동용 경량판 (프로토콜 v2, firmware/embrace_node)
 
 visualizer.py 에서 그래프·CSV·PNG 기능을 모두 덜어내고 "지금 흡기인가, 호기인가"
 만 판단하는 부분을 남긴 모듈이다. 의존성은 pyserial 하나뿐이다 (numpy·matplotlib 불필요).
+시리얼 줄 해석은 저장소 루트의 common/embrace_link.py (LineParser) 를 쓴다
+→ 5채널 프레임 중 'breath' 열만 사용하며, v1(WROOM-32) 형식도 그대로 읽는다.
 
 신호 처리 경로는 visualizer.py 와 동일하다.
-    ESP32 (seq, t_ms, mv)  →  대역통과 0.08~0.7 Hz  →  SlopeDetector  →  흡기 / 호기 / 판정 보류
+    ESP32 (seq, t_ms, breath)  →  대역통과 0.08~0.7 Hz  →  SlopeDetector  →  흡기 / 호기 / 판정 보류
   - BandpassButter2 : 원본 Air-Rhythm breath/filters.py
   - SlopeDetector   : 원본 Air-Rhythm breath/detectors/slope.py (MID_GATE=on, PROM_RATIO=0 고정)
   같은 입력이면 visualizer.py 와 같은 시각에 같은 전환을 확정한다.
@@ -44,10 +46,14 @@ from collections import deque
 from dataclasses import dataclass
 from enum import IntEnum
 from statistics import median
+from pathlib import Path
 from typing import Callable, Iterator
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "common"))   # 저장소 루트의 common/
+from embrace_link import LineParser  # noqa: E402
+
 # =============================================================================
-#  설정 — 펌웨어(sensor_app.cpp) 및 visualizer.py 와 같은 값
+#  설정 — 펌웨어(config.h) 및 visualizer.py 와 같은 값
 # =============================================================================
 DEFAULT_BAUD = 115200
 DEFAULT_FS = 50.0        # 펌웨어 PERIOD_MS=20
@@ -55,8 +61,8 @@ DEFAULT_FS = 50.0        # 펌웨어 PERIOD_MS=20
 HP_HZ = 0.08             # 대역통과 고역 차단 (약 5 bpm 이하 드리프트 제거)
 LP_HZ = 0.70             # 대역통과 저역 차단 (약 42 bpm 이상 노이즈 제거)
 
-SAT_HIGH_MV = 3000       # 이상이면 단선/ADC 상한 포화 (펌웨어 OPEN_MV)
-SAT_LOW_MV = 60          # 이하면 단락 (펌웨어 SHORT_MV)
+SAT_HIGH_MV = 3000       # 이상이면 단선/ADC 상한 포화 (펌웨어 PULLUP_OPEN_MV)
+SAT_LOW_MV = 60          # 이하면 단락 (펌웨어 PULLUP_SHORT_MV)
 SAT_CHECK_N = 25         # 연속 0.5 s 범위 밖이어야 센서 이상으로 판정 (펌웨어 FAULT_HOLD)
 
 MAX_GAP_SAMPLES = 25     # seq 가 이만큼(0.5 s) 이상 건너뛰면 필터·검출기를 재시작
@@ -409,17 +415,21 @@ class BreathPhaseDetector:
 # =============================================================================
 #  시리얼 줄 파싱 / 입력 소스
 # =============================================================================
+CHANNEL = "breath"
+_line_parser = LineParser()
+
+
 def parse_sample(line: str) -> tuple[int, int, float] | None:
-    """'seq<TAB>t_ms<TAB>mv<TAB>ma_mv' → (seq, t_ms, mv). '#' 진단 줄·깨진 줄은 None."""
-    if not line or line.startswith("#"):
+    """시리얼 한 줄 → (seq, t_ms, breath mV). 헤더·진단·깨진 줄은 None.
+
+    v1.0 과 같은 이름·반환형을 유지한 호환 함수다. 내부적으로 공통 LineParser 를 써서
+    v2(5채널 프레임, '# columns' 헤더 필요) 와 v1(seq, t_ms, mv, ma_mv) 를 모두 읽는다.
+    헤더 줄도 이 함수에 그대로 넘겨야 열 이름을 기억한다.
+    """
+    frame, _ = _line_parser.feed(line)
+    if frame is None or CHANNEL not in frame.values:
         return None
-    parts = line.split("\t")
-    if len(parts) != 4:
-        return None
-    try:
-        return int(parts[0]), int(parts[1]), float(parts[2])
-    except ValueError:
-        return None
+    return frame.seq, frame.t_ms, frame.values[CHANNEL]
 
 
 def list_ports() -> None:
@@ -449,6 +459,7 @@ def serial_lines(port: str, baud: int) -> Iterator[str | None]:
         sys.exit(1)
     time.sleep(1.5)            # ESP32 는 포트를 열면 리셋된다 → 부팅 로그를 흘려보낸다
     ser.reset_input_buffer()
+    ser.write(b"h")            # 헤더(열 이름) 즉시 요청 — 안 보내도 5 s 안에 온다
     try:
         while True:
             raw = ser.readline()
@@ -467,7 +478,8 @@ def demo_lines(fs: float, realtime: bool) -> Iterator[str | None]:
     rng = random.Random(7)
     phase = 0.0
     t0 = time.perf_counter()
-    yield "# AirRhythm DEMO"
+    yield "# EMBRACE embrace_node v2.0.0 board=DEMO fs=50Hz"
+    yield "# columns:\tseq\tt_ms\tbreath\tflags"
     for seq in range(int(100 * fs)):
         t = seq * period
         phase += 2 * math.pi * 15 / 60 * period
@@ -477,9 +489,11 @@ def demo_lines(fs: float, realtime: bool) -> Iterator[str | None]:
         mv = 900 + breath + 15 * math.sin(2 * math.pi * t / 90) + rng.gauss(0, 3)
         if 40 < t < 41.5:
             mv += rng.gauss(0, 40)
+        flag = 0
         if 70 <= t < 73:
             mv = 3145
-        yield f"{seq}\t{int(t * 1000)}\t{round(mv)}\t{round(mv)}"
+            flag = 1 if t >= 70.5 else 0         # 펌웨어도 0.5 s 지속 후에야 단선으로 표시
+        yield f"{seq}\t{int(t * 1000)}\t{round(mv)}\t{flag}"
         if realtime:
             sleep = t0 + (seq + 1) * period - time.perf_counter()
             if sleep > 0:
@@ -509,14 +523,22 @@ def run(lines: Iterator[str | None], polarity: int, plain: bool) -> BreathPhaseD
               flush=True)
 
     det = BreathPhaseDetector(DEFAULT_FS, polarity, on_event=on_event, on_change=on_change)
+    parser = LineParser()
+    warned_no_breath = False
+    quiet = ("# fs=", "# EMBRACE", "# ch ", "# columns")
     try:
         for line in lines:
             if line:
-                s = parse_sample(line)
-                if s is not None:
-                    det.update(*s)
-                elif line.startswith("#") and not line.startswith("# fs=") and not plain:
-                    print(line, flush=True)      # 펌웨어 진단(WARN 등)은 그대로 보여준다
+                frame, meta = parser.feed(line)
+                if frame is not None:
+                    if CHANNEL in frame.values:
+                        det.update(frame.seq, frame.t_ms, frame.values[CHANNEL])
+                    elif not warned_no_breath:
+                        warned_no_breath = True
+                        print("[경고] 기기가 breath 열을 보내지 않습니다 (config.h 의 ENABLE_BREATH 확인)",
+                              file=sys.stderr)
+                elif meta and not meta.startswith(quiet) and not plain:
+                    print(meta, flush=True)      # 펌웨어 진단(WARN 등)은 그대로 보여준다
             det.check_stale()
     except KeyboardInterrupt:
         pass
@@ -530,7 +552,7 @@ def run(lines: Iterator[str | None], polarity: int, plain: bool) -> BreathPhaseD
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="Air-Rhythm 흡기/호기 판별기 (그래프·CSV 없음)")
+    ap = argparse.ArgumentParser(description="EMBRACE 흡기/호기 판별기 (그래프·CSV 없음)")
     g = ap.add_mutually_exclusive_group(required=True)
     g.add_argument("--port", help="시리얼 포트 (예: COM5, /dev/ttyUSB0)")
     g.add_argument("--list", action="store_true", help="사용 가능한 포트 목록")

@@ -1,0 +1,249 @@
+{
+  "channel": "chest",
+  "created": "2026-11-04T13:46:31",
+  "sense_mm": 10.0,
+  "pusher_g": 0.0,
+  "r_ref": 470000.0,
+  "sensor_kind": "fsr",
+  "demo": true,
+  "device_header": [
+    "# EMBRACE embrace_node v2.0.0 board=DEMO core=0.0.0 fs=50Hz oversample=8 discard=1 ma_window=10 send_ma=0",
+    "# ch chest pin=7 kind=fsr r_ref=470000 r_bias=4700000 open_check=on sense_mm=10.0 low_mv=80:open high_mv=3000:short",
+    "# columns:\tseq\tt_ms\tchest\tflags"
+  ],
+  "steps_g": [
+    0.0,
+    15.4,
+    23.1,
+    30.8,
+    46.2
+  ],
+  "repeat": 2,
+  "settle_s": 0.5,
+  "measure_s": 1.0,
+  "readings": [
+    {
+      "rep": 1,
+      "dir": "up",
+      "grams": 0.0,
+      "mean": 299.5882352941176,
+      "std": 3.027715115979279,
+      "n": 51,
+      "faults": 0
+    },
+    {
+      "rep": 1,
+      "dir": "up",
+      "grams": 15.4,
+      "mean": 1482.46,
+      "std": 2.628027894114691,
+      "n": 50,
+      "faults": 0
+    },
+    {
+      "rep": 1,
+      "dir": "up",
+      "grams": 23.1,
+      "mean": 1733.16,
+      "std": 3.1902913947903695,
+      "n": 50,
+      "faults": 0
+    },
+    {
+      "rep": 1,
+      "dir": "up",
+      "grams": 30.8,
+      "mean": 1989.9,
+      "std": 3.0455722293325502,
+      "n": 50,
+      "faults": 0
+    },
+    {
+      "rep": 1,
+      "dir": "up",
+      "grams": 46.2,
+      "mean": 2253.22,
+      "std": 3.005369344682809,
+      "n": 50,
+      "faults": 0
+    },
+    {
+      "rep": 1,
+      "dir": "down",
+      "grams": 30.8,
+      "mean": 1999.46,
+      "std": 3.045304180376799,
+      "n": 50,
+      "faults": 0
+    },
+    {
+      "rep": 1,
+      "dir": "down",
+      "grams": 23.1,
+      "mean": 1831.52,
+      "std": 2.8373600837570767,
+      "n": 50,
+      "faults": 0
+    },
+    {
+      "rep": 1,
+      "dir": "down",
+      "grams": 15.4,
+      "mean": 1494.16,
+      "std": 2.888117810927375,
+      "n": 50,
+      "faults": 0
+    },
+    {
+      "rep": 1,
+      "dir": "down",
+      "grams": 0.0,
+      "mean": 300.2,
+      "std": 2.8428212488760582,
+      "n": 50,
+      "faults": 0
+    },
+    {
+      "rep": 2,
+      "dir": "up",
+      "grams": 0.0,
+      "mean": 300.54,
+      "std": 3.30867752112162,
+      "n": 50,
+      "faults": 0
+    },
+    {
+      "rep": 2,
+      "dir": "up",
+      "grams": 15.4,
+      "mean": 1479.76,
+      "std": 3.165889628975896,
+      "n": 50,
+      "faults": 0
+    },
+    {
+      "rep": 2,
+      "dir": "up",
+      "grams": 23.1,
+      "mean": 1753.42,
+      "std": 2.703663425496477,
+      "n": 50,
+      "faults": 0
+    },
+    {
+      "rep": 2,
+      "dir": "up",
+      "grams": 30.8,
+      "mean": 1981.4,
+      "std": 2.7479120088101934,
+      "n": 50,
+      "faults": 0
+    },
+    {
+      "rep": 2,
+      "dir": "up",
+      "grams": 46.2,
+      "mean": 2238.294117647059,
+      "std": 3.556931923144208,
+      "n": 51,
+      "faults": 0
+    },
+    {
+      "rep": 2,
+      "dir": "down",
+      "grams": 30.8,
+      "mean": 1997.3,
+      "std": 2.844615393105697,
+      "n": 50,
+      "faults": 0
+    },
+    {
+      "rep": 2,
+      "dir": "down",
+      "grams": 23.1,
+      "mean": 1780.22,
+      "std": 3.5702283697608057,
+      "n": 50,
+      "faults": 0
+    },
+    {
+      "rep": 2,
+      "dir": "down",
+      "grams": 15.4,
+      "mean": 1461.5,
+      "std": 3.0855158666364537,
+      "n": 50,
+      "faults": 0
+    },
+    {
+      "rep": 2,
+      "dir": "down",
+      "grams": 0.0,
+      "mean": 300.2,
+      "std": 2.9554515522253157,
+      "n": 50,
+      "faults": 0
+    }
+  ],
+  "table": {
+    "grams": [
+      0.0,
+      15.4,
+      23.1,
+      30.8,
+      46.2
+    ],
+    "mv_mean": [
+      300.0641176470588,
+      1481.1100000000001,
+      1743.29,
+      1985.65,
+      2245.7570588235294
+    ],
+    "mv_sd_between_reps": [
+      0.6729992776234627,
+      1.9091883092037105,
+      14.325983386839447,
+      6.010407640085654,
+      10.554192626957054
+    ]
+  },
+  "metrics": {
+    "noise_sd_mv": 3.0249702773396487,
+    "span_mv": 1945.6929411764706,
+    "linear_r2": 0.8825874473457631,
+    "slope_mv_per_g": 41.179343009931245,
+    "monotonic": true,
+    "repeatability_pct": {
+      "15.4": 0.09114785532473188,
+      "23.1": 0.5810851894980245,
+      "30.8": 0.21403570619192708,
+      "46.2": 0.33231293416839836
+    },
+    "hysteresis_pct_of_span": {
+      "0.0": 0.006983751139016046,
+      "15.4": -0.1685774733816393,
+      "23.1": 3.2163348427507112,
+      "30.8": 0.6542656207768721
+    }
+  },
+  "criteria": {
+    "repeatability": {
+      "value_pct": 0.5810851894980245,
+      "limit_pct": 10.0,
+      "pass": true
+    },
+    "resolution": {
+      "value_x_noise": 80.11979549536167,
+      "limit_x_noise": 3.0,
+      "grams_20mmhg": 23.1,
+      "grams_30mmhg": 30.8,
+      "pass": true
+    },
+    "response_floor": {
+      "grams": 15.4,
+      "lift_x_noise": 390.4322271198077,
+      "pass": true
+    }
+  }
+}
