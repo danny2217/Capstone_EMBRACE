@@ -41,23 +41,29 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 
+// ───────── 색상 / 테마 ─────────
+
 // true면 다크 테마. 값이 바뀌면 화면이 자동으로 다시 그려집니다
 var isDarkTheme by mutableStateOf(false)
 
-val PrimaryCoral: Color get() = if (isDarkTheme) Color(0xFF9C5B62) else Color(0xFFFFC0C2)
-val BgPeach: Color get() = if (isDarkTheme) Color(0xFF4A3235) else Color(0xFFFCE4E5)
-val InactiveGray: Color get() = if (isDarkTheme) Color(0xFF2E2E31) else Color(0xFFECECEC)
-val TextCharcoal: Color get() = if (isDarkTheme) Color(0xFFFFFFFF) else Color(0xFF1C1C1C)
-val SurfaceWhite: Color get() = if (isDarkTheme) Color(0xFF1B1B1D) else Color(0xFFFFFFFF)
-val LinkBlue = Color(0xFF3866A9)
-val SosRed = Color(0xFFD64541)
-val GreenOk = Color(0xFF6FCF97)
+// 앱 전체에서 쓰는 색 (다크 모드면 어두운 색, 아니면 밝은 색)
+val PrimaryCoral: Color get() = if (isDarkTheme) Color(0xFF9C5B62) else Color(0xFFFFC0C2) // 메인 분홍
+val BgPeach: Color get() = if (isDarkTheme) Color(0xFF4A3235) else Color(0xFFFCE4E5)      // 연한 분홍(카드, 버튼)
+val InactiveGray: Color get() = if (isDarkTheme) Color(0xFF2E2E31) else Color(0xFFECECEC) // 회색(입력칸)
+val TextCharcoal: Color get() = if (isDarkTheme) Color(0xFFFFFFFF) else Color(0xFF1C1C1C) // 글자색
+val SurfaceWhite: Color get() = if (isDarkTheme) Color(0xFF1B1B1D) else Color(0xFFFFFFFF) // 배경
+val LinkBlue = Color(0xFF3866A9) // 파란 글씨(시간, 배터리)
+val SosRed = Color(0xFFD64541)   // SOS 버튼
+val GreenOk = Color(0xFF6FCF97)  // 초록(그래프, 스위치)
+
+// ───────── 앱 시작점 ─────────
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        enableEdgeToEdge() // 상태바 영역까지 화면 사용
         setContent {
+            // 색을 따로 안 정한 글씨의 기본 색 지정
             CompositionLocalProvider(LocalContentColor provides TextCharcoal) {
                 EmbraceApp()
             }
@@ -75,32 +81,36 @@ enum class Screen {
     Settings, NotiSettings, PwSettings, PwSettingsDone, DeleteAccount
 }
 
-// 화면 이동
+// 화면 이동 (뒤로가기 기록을 쌓아둠)
 class Nav {
     val stack = mutableStateListOf(Screen.Splash)
-    val current: Screen get() = stack.last()
-    fun go(s: Screen) { stack.add(s) }
-    fun root(s: Screen) { stack.clear(); stack.add(s) }
-    fun back() { if (stack.size > 1) stack.removeAt(stack.lastIndex) }
+    val current: Screen get() = stack.last()                                    // 지금 보이는 화면
+    fun go(s: Screen) { stack.add(s) }                                          // 다음 화면으로
+    fun root(s: Screen) { stack.clear(); stack.add(s) }                         // 기록 지우고 이동
+    fun back() { if (stack.size > 1) stack.removeAt(stack.lastIndex) }          // 뒤로가기
 }
 
+// 앱 전체 틀: 어떤 화면을 보여줄지 결정
 @Composable
 fun EmbraceApp() {
     val nav = remember { Nav() }
     val s = nav.current
 
+    // 시작 화면 2초 뒤 로그인/가입 선택 화면으로 이동
     LaunchedEffect(Unit) {
         delay(2000)
         if (nav.current == Screen.Splash) nav.root(Screen.AuthLaunch)
     }
-    BackHandler(enabled = nav.stack.size > 1) { nav.back() }
+    BackHandler(enabled = nav.stack.size > 1) { nav.back() } // 폰의 뒤로가기 버튼 처리
 
+    // 하단 탭 바를 보여줄 화면들
     val profileGroup = setOf(
         Screen.Profile, Screen.EditProfile, Screen.ChangePw, Screen.Settings,
         Screen.NotiSettings, Screen.PwSettings, Screen.DeleteAccount
     )
     val homeGroup = setOf(Screen.Home, Screen.Notifications)
     val showBar = s in profileGroup || s in homeGroup || s == Screen.Map
+    // 선택된 탭 번호 (0: 지도, 1: 홈, 2: 프로필)
     val tabIndex = when {
         s == Screen.Map -> 0
         s in profileGroup -> 2
@@ -117,6 +127,7 @@ fun EmbraceApp() {
         }
     ) { pad ->
         Box(Modifier.fillMaxSize().then(if (s == Screen.Map) Modifier else Modifier.padding(pad))) {
+            // 현재 화면에 맞는 함수 호출
             when (s) {
                 Screen.Splash -> LaunchScreen()
                 Screen.AuthLaunch -> AuthLaunchScreen(nav)
@@ -145,7 +156,9 @@ fun EmbraceApp() {
     }
 }
 
+// ───────── 공통 부품 ─────────
 
+// 하단 탭 바 (지도 / 홈 / 프로필)
 @Composable
 fun BottomBar(selected: Int, onSelect: (Int) -> Unit) {
     val icons = listOf(Icons.Default.LocationOn, Icons.Default.Home, Icons.Default.Person)
@@ -165,7 +178,7 @@ fun BottomBar(selected: Int, onSelect: (Int) -> Unit) {
                         .size(56.dp)
                         .then(if (i == selected) Modifier.shadow(6.dp, RoundedCornerShape(18.dp)) else Modifier)
                         .clip(RoundedCornerShape(18.dp))
-                        .background(if (i == selected) PrimaryCoral else Color.Transparent)
+                        .background(if (i == selected) PrimaryCoral else Color.Transparent) // 선택된 탭만 분홍 박스
                         .clickable { onSelect(i) },
                     contentAlignment = Alignment.Center
                 ) { Icon(icon, null, tint = TextCharcoal, modifier = Modifier.size(30.dp)) }
@@ -174,6 +187,7 @@ fun BottomBar(selected: Int, onSelect: (Int) -> Unit) {
     }
 }
 
+// 오른쪽 위 알림 벨 버튼
 @Composable
 fun BellButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
     Surface(
@@ -186,7 +200,8 @@ fun BellButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
     }
 }
 
-
+// 분홍 헤더 + 흰색 둥근 본문 틀 (대부분의 화면이 사용)
+// bottomContent: 화면 아래에 고정할 버튼 영역
 @Composable
 fun PinkPage(
     title: String,
@@ -197,6 +212,7 @@ fun PinkPage(
     content: @Composable ColumnScope.() -> Unit
 ) {
     Column(Modifier.fillMaxSize().background(PrimaryCoral)) {
+        // 헤더 (뒤로가기, 제목, 벨)
         Box(
             Modifier.fillMaxWidth().statusBarsPadding().height(headerHeight).padding(horizontal = 16.dp)
         ) {
@@ -211,12 +227,14 @@ fun PinkPage(
             )
             if (onBell != null) BellButton(onBell, Modifier.align(Alignment.CenterEnd))
         }
+        // 흰색 본문 영역
         Column(
             Modifier
                 .fillMaxWidth().weight(1f)
                 .clip(RoundedCornerShape(topStart = 56.dp, topEnd = 56.dp))
                 .background(SurfaceWhite)
         ) {
+            // 스크롤되는 내용
             Column(
                 Modifier
                     .weight(1f).fillMaxWidth()
@@ -225,6 +243,7 @@ fun PinkPage(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 content = content
             )
+            // 아래 고정 버튼
             if (bottomContent != null) {
                 Column(
                     Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = 24.dp),
@@ -236,10 +255,11 @@ fun PinkPage(
     }
 }
 
+// 회색 입력칸 (password = true면 "보기/숨김" 버튼 표시)
 @Composable
 fun SoftField(label: String, placeholder: String, password: Boolean = false) {
-    var text by remember { mutableStateOf("") }
-    var show by remember { mutableStateOf(false) }
+    var text by remember { mutableStateOf("") }   // 입력한 글자
+    var show by remember { mutableStateOf(false) } // 비밀번호 보이기 여부
     val fieldShape = RoundedCornerShape(22.dp)
     Column(Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
         Text(label, fontSize = 12.sp, color = TextCharcoal, modifier = Modifier.padding(bottom = 6.dp, start = 4.dp))
@@ -268,6 +288,7 @@ fun SoftField(label: String, placeholder: String, password: Boolean = false) {
     }
 }
 
+// 둥근 알약 모양 버튼
 @Composable
 fun PillButton(
     text: String, modifier: Modifier = Modifier.fillMaxWidth(0.6f),
@@ -280,6 +301,7 @@ fun PillButton(
     ) { Text(text, fontWeight = FontWeight.Bold, fontSize = 15.sp) }
 }
 
+// 작은 글씨 링크 (비밀번호를 잊으셨나요 등등)
 @Composable
 fun SmallLink(text: String, onClick: () -> Unit) {
     Text(
@@ -288,6 +310,7 @@ fun SmallLink(text: String, onClick: () -> Unit) {
     )
 }
 
+// 탭 선택 바 (호흡 / 기기 관리 / 비상 배기)
 @Composable
 fun SegTabs(options: List<String>, selected: Int, onSelect: (Int) -> Unit) {
     val barShape = RoundedCornerShape(28.dp)
@@ -297,6 +320,7 @@ fun SegTabs(options: List<String>, selected: Int, onSelect: (Int) -> Unit) {
     ) {
         options.forEachIndexed { i, t ->
             val isSel = i == selected
+            // 선택되면 색과 그림자가 부드럽게 바뀜
             val bg by androidx.compose.animation.animateColorAsState(
                 if (isSel) BgPeach else Color.Transparent, label = "tabBg"
             )
@@ -319,6 +343,7 @@ fun SegTabs(options: List<String>, selected: Int, onSelect: (Int) -> Unit) {
     }
 }
 
+// 메뉴 한 줄
 @Composable
 fun MenuRow(
     icon: ImageVector, text: String,
@@ -338,6 +363,7 @@ fun MenuRow(
     }
 }
 
+// 켜고 끄는 스위치 한 줄 (알림 설정 화면)
 @Composable
 fun SwitchRow(text: String, initial: Boolean = true) {
     var on by remember { mutableStateOf(initial) }
@@ -350,8 +376,9 @@ fun SwitchRow(text: String, initial: Boolean = true) {
     }
 }
 
-// 초기 화면
+// ───────── 시작 / 로그인 / 회원가입 ─────────
 
+// 앱을 켜면 처음 2초간 보이는 로고 화면
 @Composable
 fun LaunchScreen() {
     Column(
@@ -359,10 +386,11 @@ fun LaunchScreen() {
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center
     ) {
         Image(painterResource(id = R.drawable.embrace_logo), "앱 로고", Modifier.size(320.dp))
-        Spacer(Modifier.height(124.dp))
+        Spacer(Modifier.height(124.dp)) // 다음 화면과 로고 위치를 맞추기 위한 빈 공간
     }
 }
 
+// 로그인 / 회원가입 선택 화면
 @Composable
 fun AuthLaunchScreen(nav: Nav) {
     Column(
@@ -396,12 +424,14 @@ fun AuthLaunchScreen(nav: Nav) {
     }
 }
 
+// 로그인 화면
 @Composable
 fun LoginScreen(nav: Nav) {
     PinkPage("로그인", onBack = { nav.back() }, headerHeight = 150.dp) {
         Spacer(Modifier.height(40.dp))
         SoftField("이메일 계정", "example@example.com")
         SoftField("비밀번호", "비밀번호 입력", password = true)
+        // 아이디 저장 / 자동 로그인 체크박스
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
             var a by remember { mutableStateOf(false) }
             var b by remember { mutableStateOf(false) }
@@ -410,11 +440,12 @@ fun LoginScreen(nav: Nav) {
             Checkbox(b, { b = it }); Text("자동 로그인", fontSize = 11.sp)
         }
         Spacer(Modifier.height(34.dp))
-        PillButton("로그인") { nav.root(Screen.Home) }
+        PillButton("로그인") { nav.root(Screen.Home) } // 지금은 누르면 바로 홈으로 이동
         Spacer(Modifier.height(12.dp))
         PillButton("회원가입", color = InactiveGray) { nav.go(Screen.SignupType) }
         SmallLink("비밀번호를 잊으셨나요?") { nav.go(Screen.ForgotEmail) }
         Spacer(Modifier.height(40.dp))
+        // 간편 로그인
         Text("또는 간편 로그인", fontSize = 11.sp, color = Color.Gray)
         Spacer(Modifier.height(10.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -422,8 +453,7 @@ fun LoginScreen(nav: Nav) {
                 Box(
                     Modifier.size(40.dp).border(1.5.dp, Color(0xFF5B8A8A), CircleShape),
                     contentAlignment = Alignment.Center
-                ) { Text(it, fontWeight = FontWeight.Bold, color = Color(0xFF5B8A8A)) }
-            }
+                ) { Text(it, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Color(0xFF5B8A8A)) }            }
         }
         Spacer(Modifier.height(28.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -434,9 +464,10 @@ fun LoginScreen(nav: Nav) {
     }
 }
 
-
+// 가입 유형(보호자/자녀)을 두 화면에서 같이 쓰기 위한 변수
 private var signupIsGuardian = true
 
+// 회원가입 1단계: 가입 유형 + 기본 정보
 @Composable
 fun SignupTypeScreen(nav: Nav) {
     var type by remember { mutableStateOf(if (signupIsGuardian) 0 else 1) }
@@ -459,6 +490,7 @@ fun SignupTypeScreen(nav: Nav) {
     }
 }
 
+// 완료 화면 (1.5초 뒤 자동으로 다음 화면 이동)
 @Composable
 fun DoneScreen(text: String, onFinish: () -> Unit) {
     LaunchedEffect(Unit) { delay(1500); onFinish() }
@@ -473,8 +505,9 @@ fun DoneScreen(text: String, onFinish: () -> Unit) {
     }
 }
 
-// 비밀번호 찾기
+// ───────── 비밀번호 찾기 ─────────
 
+// 이메일 입력
 @Composable
 fun ForgotEmailScreen(nav: Nav) {
     PinkPage("비밀번호 잊으셨나요?", onBack = { nav.back() }, headerHeight = 150.dp) {
@@ -487,6 +520,7 @@ fun ForgotEmailScreen(nav: Nav) {
     }
 }
 
+// 새 비밀번호 입력
 @Composable
 fun ForgotNewScreen(nav: Nav) {
     PinkPage("새 비밀번호", onBack = { nav.back() }, headerHeight = 150.dp) {
@@ -498,12 +532,12 @@ fun ForgotNewScreen(nav: Nav) {
     }
 }
 
-// 홈
 
+// 홈 화면: 호흡 / 기기 관리 / 비상 배기
 @Composable
 fun HomeScreen(onBell: () -> Unit) {
-    var tab by remember { mutableStateOf(0) }
-    var sosDialog by remember { mutableStateOf(false) }
+    var tab by remember { mutableStateOf(0) }            // 선택된 탭 번호
+    var sosDialog by remember { mutableStateOf(false) }  // SOS 팝업 표시 여부
 
     Column(Modifier.fillMaxSize().background(PrimaryCoral)) {
         Row(
@@ -518,6 +552,7 @@ fun HomeScreen(onBell: () -> Unit) {
         }
         VitalsCard()
         Spacer(Modifier.height(30.dp))
+        // 흰색 영역: 탭 + 탭 내용
         Column(
             Modifier
                 .fillMaxWidth().weight(1f)
@@ -536,6 +571,7 @@ fun HomeScreen(onBell: () -> Unit) {
             Spacer(Modifier.height(20.dp))
         }
     }
+    // SOS 팝업
     if (sosDialog) {
         AlertDialog(
             onDismissRequest = { sosDialog = false },
@@ -546,6 +582,7 @@ fun HomeScreen(onBell: () -> Unit) {
     }
 }
 
+// 위쪽 생체 정보 카드 (심박수, 호흡수, 조끼 압력)
 @Composable
 fun VitalsCard() {
     Surface(
@@ -553,6 +590,7 @@ fun VitalsCard() {
         modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp)
     ) {
         Row(Modifier.padding(horizontal = 20.dp, vertical = 30.dp), verticalAlignment = Alignment.CenterVertically) {
+            // 왼쪽: 심박수 원형 그래프
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Box(Modifier.size(78.dp), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(
@@ -568,8 +606,9 @@ fun VitalsCard() {
                 Text("심박수", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = TextCharcoal)
             }
             Spacer(Modifier.width(16.dp))
-            Box(Modifier.width(1.5.dp).height(116.dp).background(Color.White))
+            Box(Modifier.width(1.5.dp).height(116.dp).background(Color.White)) // 세로 구분선
             Spacer(Modifier.width(16.dp))
+            // 오른쪽: 호흡수, 조끼 압력
             Column(Modifier.weight(1f)) {
                 VitalLine(R.drawable.ic_breath, "호흡수", "20", "회/분")
                 Spacer(Modifier.height(16.dp))
@@ -581,6 +620,7 @@ fun VitalsCard() {
     }
 }
 
+// 생체 정보 한 줄 (아이콘 + 이름 + 값 + 단위)
 @Composable
 fun VitalLine(iconRes: Int, label: String, value: String, unit: String) {
     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -597,13 +637,15 @@ fun VitalLine(iconRes: Int, label: String, value: String, unit: String) {
     }
 }
 
+// 호흡 그래프 (초록 곡선, 지금은 예시 값)
 @Composable
 fun BreathChart() {
-    val pts = listOf(0.35f, 0.6f, 0.3f, 0.55f, 0.35f, 0.4f, 0.95f, 0.5f)
+    val pts = listOf(0.35f, 0.6f, 0.3f, 0.55f, 0.35f, 0.4f, 0.95f, 0.5f) // 그래프 높이 값 (0~1)
     Canvas(Modifier.fillMaxWidth().height(115.dp)) {
         val w = size.width
         val h = size.height
         val step = w / (pts.size - 1)
+        // 점들을 부드러운 곡선으로 연결
         val line = Path().apply {
             moveTo(0f, h * (1 - pts[0]))
             for (i in 1 until pts.size) {
@@ -612,14 +654,17 @@ fun BreathChart() {
                 cubicTo((x0 + x1) / 2, y0, (x0 + x1) / 2, y1, x1, y1)
             }
         }
+        // 곡선 아래 색 채우기
         val fill = Path().apply { addPath(line); lineTo(w, h); lineTo(0f, h); close() }
         drawPath(fill, Brush.verticalGradient(listOf(GreenOk, Color.Transparent)))
         drawPath(line, GreenOk, style = Stroke(width = 4f))
     }
 }
 
+// [호흡] 탭
 @Composable
 fun BreathTab() {
+    // 그래프
     Surface(
         shape = RoundedCornerShape(48.dp), color = PrimaryCoral, shadowElevation = 6.dp,
         modifier = Modifier.fillMaxWidth()
@@ -635,6 +680,7 @@ fun BreathTab() {
         }
     }
     Spacer(Modifier.height(26.dp))
+    // 왼쪽: 호흡 수, 오른쪽: 호흡비
     Row(horizontalArrangement = Arrangement.spacedBy(22.dp)) {
         Surface(
             shape = RoundedCornerShape(48.dp), color = InactiveGray, shadowElevation = 6.dp,
@@ -663,8 +709,10 @@ fun BreathTab() {
     }
 }
 
+// [기기 관리] 탭: 기기 검색 바 + 연결된 기기 목록 + 자동 재연결
 @Composable
 fun DeviceTab() {
+    // 기기 검색 바
     Surface(
         shape = RoundedCornerShape(30.dp), color = Color(0xFFF8DADA), shadowElevation = 6.dp,
         modifier = Modifier.fillMaxWidth()
@@ -681,10 +729,12 @@ fun DeviceTab() {
         }
     }
     Spacer(Modifier.height(22.dp))
+    // 연결된 기기 (지금은 예시)
     DeviceRow(R.drawable.ic_watch, "Galaxy Watch", "88%")
     Spacer(Modifier.height(14.dp))
     DeviceRow(R.drawable.ic_vest, "ESP 32-Vest", "70%")
     Spacer(Modifier.height(24.dp))
+    // 자동 재연결 스위치
     Surface(
         shape = RoundedCornerShape(28.dp), color = BgPeach, shadowElevation = 6.dp,
         modifier = Modifier.fillMaxWidth()
@@ -697,6 +747,7 @@ fun DeviceTab() {
     }
 }
 
+// [비상 배기] 탭: 길게 누르면 작동하는 SOS 버튼
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun SosTab(onSos: () -> Unit) {
@@ -708,7 +759,7 @@ fun SosTab(onSos: () -> Unit) {
             Box(
                 Modifier
                     .size(150.dp).shadow(8.dp, CircleShape).clip(CircleShape).background(SosRed)
-                    .combinedClickable(onClick = { }, onLongClick = onSos),
+                    .combinedClickable(onClick = { }, onLongClick = onSos), // 길게 눌렀을 때만 실행
                 contentAlignment = Alignment.Center
             ) { Text("SOS", color = Color.White, fontSize = 34.sp, fontWeight = FontWeight.ExtraBold) }
         }
@@ -717,8 +768,9 @@ fun SosTab(onSos: () -> Unit) {
     }
 }
 
-// 지도,알림
+// ───────── 알림 / 지도 ─────────
 
+// 알림 한 개 (아이콘 + 제목 + 내용 + 시간)
 @Composable
 fun NotiItem(icon: ImageVector, title: String, msg: String, time: String, extra: String? = null) {
     Row(Modifier.fillMaxWidth().padding(vertical = 10.dp)) {
@@ -729,13 +781,14 @@ fun NotiItem(icon: ImageVector, title: String, msg: String, time: String, extra:
         Column(Modifier.weight(1f)) {
             Text(title, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = TextCharcoal)
             Text(msg, fontSize = 14.sp, color = TextCharcoal)
-            if (extra != null) Text(extra, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = LinkBlue)
+            if (extra != null) Text(extra, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = LinkBlue) // 위치 정보
             Text(time, fontSize = 11.sp, color = LinkBlue, modifier = Modifier.align(Alignment.End).padding(top = 6.dp))
         }
     }
     HorizontalDivider(color = Color(0xFF9DBDF0))
 }
 
+// 알림 화면 (지금은 예시 알림)
 @Composable
 fun NotificationScreen(nav: Nav) {
     PinkPage("알림", onBack = { nav.back() }, onBell = { }) {
@@ -748,9 +801,11 @@ fun NotificationScreen(nav: Nav) {
     }
 }
 
+// 지도 화면 (지금은 사진임)
 @Composable
 fun MapScreen() {
     Box(Modifier.fillMaxSize().background(SurfaceWhite)) {
+        // 지도 사진
         Image(
             painter = painterResource(id = R.drawable.map_sample),
             contentDescription = "지도",
@@ -758,7 +813,7 @@ fun MapScreen() {
             modifier = Modifier.fillMaxSize()
         )
 
-        // 현재 위치 (파란 점 + 번지는 원)
+        // 현재 위치
         Box(
             Modifier.align(androidx.compose.ui.BiasAlignment(0.09f, 0.15f)),
             contentAlignment = Alignment.Center
@@ -784,7 +839,7 @@ fun MapScreen() {
             }
         }
 
-        // 아래 시트
+        // 최근 위치 알림
         Surface(
             shape = RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp), color = SurfaceWhite,
             shadowElevation = 12.dp,
@@ -806,17 +861,18 @@ fun MapScreen() {
                         Text("5분 전", fontSize = 12.sp, color = Color.Gray)
                     }
                 }
-                Spacer(Modifier.navigationBarsPadding().height(96.dp))
+                Spacer(Modifier.navigationBarsPadding().height(96.dp)) // 하단 탭 바 뒤까지 흰색 유지
             }
         }
     }
 }
 
-// 마이페이지
+// ───────── 마이페이지 ─────────
 
+// 프로필 화면 (아바타는 분홍/흰색 경계에 걸치게 배치)
 @Composable
 fun ProfileScreen(nav: Nav) {
-    var logoutDialog by remember { mutableStateOf(false) }
+    var logoutDialog by remember { mutableStateOf(false) } // 로그아웃 팝업 표시 여부
 
     Column(Modifier.fillMaxSize().background(PrimaryCoral)) {
         // 분홍 헤더
@@ -849,6 +905,7 @@ fun ProfileScreen(nav: Nav) {
                 Text("이민주", fontWeight = FontWeight.Bold, fontSize = 20.sp, color = TextCharcoal)
                 Text("등록 아동: 25030024 이민우", fontSize = 12.sp)
                 Spacer(Modifier.height(32.dp))
+                // 메뉴 4개
                 MenuRowRes(R.drawable.ic_profile_edit, "프로필 수정") { nav.go(Screen.EditProfile) }
                 MenuRowRes(R.drawable.ic_shield, "비밀번호 변경") { nav.go(Screen.ChangePw) }
                 MenuRowRes(R.drawable.ic_settings, "설정") { nav.go(Screen.Settings) }
@@ -870,6 +927,7 @@ fun ProfileScreen(nav: Nav) {
         }
     }
 
+    // 로그아웃 확인 팝업
     if (logoutDialog) {
         ConfirmDialog(
             title = "로그아웃 알림",
@@ -881,6 +939,7 @@ fun ProfileScreen(nav: Nav) {
     }
 }
 
+// 프로필 수정 화면
 @Composable
 fun EditProfileScreen(nav: Nav) {
     PinkPage("프로필 수정", onBack = { nav.back() }, onBell = { nav.go(Screen.Notifications) }) {
@@ -900,6 +959,7 @@ fun EditProfileScreen(nav: Nav) {
     }
 }
 
+// 비밀번호 변경 화면 (프로필에서 접근)
 @Composable
 fun ChangePwScreen(nav: Nav) {
     PinkPage("비밀번호 변경", onBack = { nav.back() }, onBell = { nav.go(Screen.Notifications) }) {
@@ -911,12 +971,14 @@ fun ChangePwScreen(nav: Nav) {
     }
 }
 
+// 설정 화면 (알림 설정, 비밀번호 설정, 계정 삭제, 다크 테마)
 @Composable
 fun SettingsScreen(nav: Nav) {
     PinkPage("설정", onBack = { nav.back() }, onBell = { nav.go(Screen.Notifications) }) {
         MenuRow(Icons.Default.Notifications, "알림 설정") { nav.go(Screen.NotiSettings) }
         MenuRow(Icons.Default.Lock, "비밀번호 설정") { nav.go(Screen.PwSettings) }
         MenuRow(Icons.Default.Person, "계정 삭제") { nav.go(Screen.DeleteAccount) }
+        // 다크 테마 스위치 (켜면 앱 전체 색이 바뀜)
         MenuRow(Icons.Default.Star, "다크 테마", trailing = {
             Switch(isDarkTheme, { isDarkTheme = it }, colors = SwitchDefaults.colors(checkedTrackColor = GreenOk, checkedThumbColor = Color.White))
         }) { isDarkTheme = !isDarkTheme }
@@ -932,6 +994,7 @@ fun SettingsScreen(nav: Nav) {
     }
 }
 
+// 알림 설정 화면
 @Composable
 fun NotiSettingsScreen(nav: Nav) {
     PinkPage("알림 설정", onBack = { nav.back() }, onBell = { nav.go(Screen.Notifications) }) {
@@ -942,6 +1005,7 @@ fun NotiSettingsScreen(nav: Nav) {
     }
 }
 
+// 비밀번호 설정 화면 (설정에서 접근)
 @Composable
 fun PwSettingsScreen(nav: Nav) {
     PinkPage("비밀번호 설정", onBack = { nav.back() }, onBell = { nav.go(Screen.Notifications) }) {
@@ -953,9 +1017,10 @@ fun PwSettingsScreen(nav: Nav) {
     }
 }
 
+// 계정 삭제 화면
 @Composable
 fun DeleteAccountScreen(nav: Nav) {
-    var dialog by remember { mutableStateOf(false) }
+    var dialog by remember { mutableStateOf(false) } // 확인 팝업 표시 여부
     PinkPage("계정 삭제", onBack = { nav.back() }, onBell = { nav.go(Screen.Notifications) }) {
         Text("정말로 계정을 삭제하시겠습니까?", fontWeight = FontWeight.Bold, fontSize = 14.sp)
         Spacer(Modifier.height(16.dp))
@@ -978,6 +1043,7 @@ fun DeleteAccountScreen(nav: Nav) {
     }
 }
 
+// 회원가입 2단계: 보호자면 자녀 정보, 자녀면 보호자 정보 입력
 @Composable
 fun SignupInfoScreen(nav: Nav) {
     val who = if (signupIsGuardian) "자녀분" else "보호자"
@@ -995,6 +1061,7 @@ fun SignupInfoScreen(nav: Nav) {
     }
 }
 
+// 메뉴 한 줄 (내가 넣은 이미지 아이콘 사용, 프로필 화면용)
 @Composable
 fun MenuRowRes(iconRes: Int, text: String, onClick: () -> Unit) {
     Row(
@@ -1012,6 +1079,7 @@ fun MenuRowRes(iconRes: Int, text: String, onClick: () -> Unit) {
     }
 }
 
+// 확인/취소 팝업 (로그아웃, 계정 삭제에서 사용)
 @Composable
 fun ConfirmDialog(
     title: String,
@@ -1040,6 +1108,7 @@ fun ConfirmDialog(
     }
 }
 
+// 기기 한 줄 (아이콘 + 이름 + 배터리 + 연결 해제 버튼)
 @Composable
 fun DeviceRow(iconRes: Int, name: String, battery: String) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -1052,13 +1121,13 @@ fun DeviceRow(iconRes: Int, name: String, battery: String) {
         Spacer(Modifier.width(8.dp))
         Text(name, Modifier.weight(1f), fontSize = 13.sp, fontWeight = FontWeight.Medium, color = TextCharcoal, maxLines = 1)
         Spacer(Modifier.width(8.dp))
-        Box(Modifier.width(1.5.dp).height(40.dp).background(PrimaryCoral))
+        Box(Modifier.width(1.5.dp).height(40.dp).background(PrimaryCoral)) // 세로 구분선
         Spacer(Modifier.width(8.dp))
         Icon(painterResource(R.drawable.ic_battery), null, tint = Color.Unspecified, modifier = Modifier.size(20.dp))
         Spacer(Modifier.width(4.dp))
         Text(battery, fontSize = 14.sp, color = LinkBlue, fontWeight = FontWeight.Medium)
         Spacer(Modifier.width(8.dp))
-        Box(Modifier.width(1.5.dp).height(40.dp).background(PrimaryCoral))
+        Box(Modifier.width(1.5.dp).height(40.dp).background(PrimaryCoral)) // 세로 구분선
         Spacer(Modifier.width(8.dp))
         Button(
             onClick = { },
