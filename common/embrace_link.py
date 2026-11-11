@@ -156,6 +156,9 @@ class LineParser:
             if len(parts) >= 2:
                 self.info.channels[parts[1]] = ChannelInfo(parts[1], _kv(parts[2:]))
             self._header_block.append(line)
+        elif body.startswith(("det ", "pn ")):
+            # 판단 기준·공압 설정 (펌웨어 v2.2+) — CSV 머리에 함께 남긴다
+            self._header_block.append(line)
         elif body.startswith("columns:"):
             cols = body[len("columns:"):].split()
             if cols[:2] == ["seq", "t_ms"]:

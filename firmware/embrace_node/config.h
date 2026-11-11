@@ -146,10 +146,63 @@ constexpr uint8_t  HR_MIN_BPM        = 30;            // 이 범위를 벗어난
 constexpr uint8_t  HR_MAX_BPM        = 230;
 constexpr uint32_t HR_REPORT_MS      = 1000;          // '# hr ...' 진단 줄 주기
 
+// ---------------------------------------------------------------------------
+//  9) 공압 (펌프·밸브) — 상태 머신 설명: docs/control_fsm.md
+//     "언제 가압할지" 판단 기준은 이 파일이 아니라 detect_config.h 에 있다.
+// ---------------------------------------------------------------------------
+//  ★ ARMED = false 이면 상태 머신은 그대로 돌고 로그도 찍히지만 펌프·밸브 핀은 항상 LOW 다.
+//    (드라이런. 판단 규칙을 시험할 때는 이 상태로 둔다)
+//    실제로 가압하려면 true. 처음엔 반드시 에어백을 몸에 걸치지 않은 상태로 시험한다.
+constexpr bool PNEUMATIC_ARMED = false;
+
+// L298N 배선 (동료 코드 Air_pump_valve.ino 와 같은 핀). ENA/ENB 점퍼는 꽂아 둔 상태 가정.
+constexpr uint8_t PIN_PUMP_IN1  = 15;   // OUT1-OUT2 = 펌프
+constexpr uint8_t PIN_PUMP_IN2  = 16;
+constexpr uint8_t PIN_VALVE_IN3 = 17;   // OUT3-OUT4 = 솔레노이드 밸브
+constexpr uint8_t PIN_VALVE_IN4 = 18;
+
+// 밸브 종류. 구입 계획서 기준 NC(상시 닫힘): 전기를 넣어야 열린다(배기).
+//  ⚠ NC 는 전원이 끊기면 공기가 갇힌다 → 아래 BOOT_VENT_MS, 최대 시간 제한, 수동 배기 절차로 보완.
+//  실물이 NO 로 확인되면 false 로 바꾸기만 하면 된다 (열기/닫기 전기 신호가 자동으로 뒤집힌다).
+constexpr bool VALVE_NORMALLY_CLOSED = true;
+
+// 시간 (ms)
+constexpr uint32_t INFLATE_MS        = 8000;     // 가압: 펌프 켜는 시간
+constexpr uint32_t INFLATE_MAX_MS    = 15000;    //   절대 상한 (INFLATE_MS 를 실수로 키워도 넘지 못함)
+constexpr uint32_t HOLD_MS           = 180000;   // 유지: 3 분
+constexpr uint32_t HOLD_MAX_MS       = 300000;   //   절대 상한 5 분
+constexpr uint32_t DEFLATE_MS        = 10000;    // 배기: 밸브 여는 시간
+constexpr uint32_t COOLDOWN_MS       = 60000;    // 배기 후 다음 자동 가압까지 최소 간격
+constexpr uint32_t BOOT_VENT_MS      = 5000;     // 부팅 직후 무조건 배기 (재부팅·브라운아웃 때 갇힌 공기 빼기)
+constexpr uint32_t EMERGENCY_VENT_MS = 20000;    // 비상 배기 시간. 끝나면 LOCKOUT (자동 가압 금지)
+
+// 압박 센서(가슴·등) 기준 (mV). 0 = 사용 안 함
+//  COMP_TARGET_MV : 가압 중 이 값에 닿으면 시간 전이라도 펌프를 멈추고 유지로 간다
+//                   (TC-C2 보정 전이라 기본은 0 = 시간으로만 가압)
+//  COMP_LIMIT_MV  : 가압·유지 중 이 값을 COMP_LIMIT_HOLD_MS 이상 넘으면 비상 배기
+constexpr uint32_t COMP_TARGET_MV     = 0;
+constexpr uint32_t COMP_LIMIT_MV      = 3000;
+constexpr uint32_t COMP_LIMIT_HOLD_MS = 500;
+
+// 감시
+//  가압·유지 중 호흡 센서가 단선/단락(레일 고정)이 되면 호흡을 감시할 수 없으므로 배기한다.
+//  에어백이 부풀며 호흡 스트랩을 너무 당겨 레일에 붙는 일이 시험에서 잦으면,
+//  스트랩 위치부터 고치고 그래도 안 되면 false (보고서에 근거를 남길 것).
+constexpr bool     EMERGENCY_ON_BREATH_FAULT = true;
+constexpr uint32_t FRAME_TIMEOUT_MS = 500;   // 센서 프레임이 이만큼 끊기면 (센싱 멈춤) 가압·유지 중 비상 배기
+constexpr uint32_t CTRL_WDT_MS      = 3000;   // 제어 태스크가 이만큼 멈추면 칩 리셋 → 부팅 배기
+constexpr bool     ENABLE_ESTOP_BUTTON = true;
+constexpr uint8_t  PIN_ESTOP        = 0;      // 보드의 BOOT 버튼 (누르면 LOW). 부팅 후에는 일반 입력으로 쓸 수 있다
+constexpr uint32_t ESTOP_DEBOUNCE_MS = 50;
+constexpr uint32_t CTRL_REPORT_MS   = 1000;   // '# ctl ...' 상태 줄 주기
+
 // 태스크 배치 (코어 1 = Arduino 기본 코어)
 constexpr int      SENSE_CORE  = 1;
 constexpr unsigned SENSE_PRIO  = 3;
 constexpr unsigned TX_PRIO     = 2;
+constexpr unsigned CTRL_PRIO   = 4;     // 제어(공압) 태스크가 가장 높다 — 출력이 막혀도 안전 판단은 돈다
+constexpr uint32_t CTRL_STACK  = 6144;
+constexpr uint8_t  CTRL_QUEUE_LEN = 25; // 센싱 → 제어 큐 (0.5 s 분량)
 constexpr uint32_t TASK_STACK  = 4096;
 
 }  // namespace cfg

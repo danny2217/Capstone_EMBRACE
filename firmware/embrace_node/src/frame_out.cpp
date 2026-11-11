@@ -8,6 +8,9 @@
 //    # WARN ch=.. state=..    상태가 정상 → 단선/단락 으로 바뀜
 //    # INFO ch=.. state=ok    상태가 정상으로 돌아옴
 //    # fs=...                 1 s 마다 실측 주기·작업 시간·유실 수
+//    # det ... / # pn ...      판단 기준·공압 설정 (헤더와 함께) — detect_config.h / config.h 9절
+//    # ctl st=.. score=..      1 s 마다 제어 상태 (상태·점수·호흡수·I:E·악력·압박·심박·출력)
+//    # EVT a->b why=..         상태 전이, 거부된 명령
 //    # hr state=.. bpm=..      1 s 마다 워치 심박 상태 (ENABLE_HR_BLE 일 때만)
 //                             state: none(받은 적 없음) / stale(끊김) / rejoining(복귀 중) / fresh(사용 가능)
 //
@@ -16,6 +19,7 @@
 #include "../config.h"
 #include "adc_reader.h"
 #include "channel.h"
+#include "control_task.h"
 #include "frame.h"
 #include "hr_link.h"
 #include "sense_task.h"
@@ -67,6 +71,7 @@ static void printHeader() {
                   (unsigned long)c.highMv, healthName(c.highState));
   }
 
+  ctlPrintConfig();   // '# det' '# pn' — columns 줄보다 먼저 → PC 가 CSV 머리에 같이 저장
   Serial.print("# columns:\tseq\tt_ms");
   for (size_t i = 0; i < n; i++) Serial.printf("\t%s", ch[i].name);
   if (cfg::SEND_MA) for (size_t i = 0; i < n; i++) Serial.printf("\t%s_ma", ch[i].name);
@@ -112,10 +117,10 @@ struct RateStats {
     if (f.period_us < pMin) pMin = f.period_us;
     if (f.period_us > pMax) pMax = f.period_us;
     if (n >= 1000 / cfg::PERIOD_MS) {
-      Serial.printf("# fs=%.2fHz avg=%luus min=%luus max=%luus work_max=%luus drop=%lu\n",
+      Serial.printf("# fs=%.2fHz avg=%luus min=%luus max=%luus work_max=%luus drop=%lu ctrl_drop=%lu\n",
                     1e6f * n / sum, (unsigned long)(sum / n), (unsigned long)pMin,
                     (unsigned long)pMax, (unsigned long)workMax,
-                    (unsigned long)senseDropCount());
+                    (unsigned long)senseDropCount(), (unsigned long)senseCtrlDropCount());
       *this = RateStats();
     }
   }
@@ -143,14 +148,19 @@ static void txTask(void*) {
   RateStats rate;
   uint32_t lastHeaderMs = 0;
   uint32_t lastHrMs = 0;
+  uint32_t lastCtlMs = 0;
   bool headerDue = true;
   Frame f;
 
   for (;;) {
-    // PC 에서 'h' 를 보내면 즉시 헤더 재전송
+    // 시리얼 한 글자 명령
+    //   h 헤더 재전송   i 수동 가압   d 배기   x 비상 배기   r LOCKOUT 해제
     while (Serial.available()) {
-      if (Serial.read() == 'h') headerDue = true;
+      const int c = Serial.read();
+      if (c == 'h') headerDue = true;
+      else if (c == 'i' || c == 'd' || c == 'x' || c == 'r') ctlCommand(static_cast<char>(c));
     }
+    ctlPrintEvents();   // 상태 전이는 프레임이 없어도 바로 찍는다
     if (xQueueReceive(s_q, &f, pdMS_TO_TICKS(100)) != pdTRUE) continue;
 
     if (headerDue || millis() - lastHeaderMs >= cfg::HEADER_EVERY_MS) {
@@ -161,6 +171,10 @@ static void txTask(void*) {
     printHealthChanges(f, lastHealth);
     printFrame(f);
     if (cfg::REPORT_RATE) rate.add(f);
+    if (millis() - lastCtlMs >= cfg::CTRL_REPORT_MS) {
+      ctlPrintStatus();
+      lastCtlMs = millis();
+    }
     if (cfg::ENABLE_HR_BLE && millis() - lastHrMs >= cfg::HR_REPORT_MS) {
       printHr();
       lastHrMs = millis();

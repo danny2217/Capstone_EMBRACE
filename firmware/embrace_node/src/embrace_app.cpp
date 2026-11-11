@@ -4,10 +4,12 @@
 #include <Arduino.h>
 #include "../config.h"
 #include "adc_reader.h"
+#include "control_task.h"
 #include "channel.h"
 #include "frame.h"
 #include "frame_out.h"
 #include "hr_link.h"
+#include "pneumatic.h"
 #include "sense_task.h"
 
 // 보드 선택 검사: 이 코드는 ESP32-S3 의 ADC1 핀 배치(GPIO1~10)를 전제로 한다.
@@ -20,21 +22,25 @@
 #endif
 
 void embraceBegin() {
+  // ★ 가장 먼저: 펌프·밸브 핀을 OFF 로 고정 (Serial 초기화보다도 먼저)
+  pneumaticSafeInit();
   Serial.begin(cfg::BAUD);
 
   const size_t n = channelsInit();
   adcInit(channels(), n);
 
   QueueHandle_t q = xQueueCreate(cfg::QUEUE_LEN, sizeof(Frame));
-  if (!q) {
+  QueueHandle_t ctrlQ = xQueueCreate(cfg::CTRL_QUEUE_LEN, sizeof(Frame));
+  if (!q || !ctrlQ) {
     // 메모리 부족 — 정상 동작 불가. 계속 알린다.
     for (;;) {
       Serial.println("# ERROR queue_alloc_failed");
       delay(1000);   // 여기는 태스크 시작 전 setup() 안의 치명적 오류 경로라 delay 허용
     }
   }
-  txTaskStart(q);      // 전송 태스크가 첫 프레임을 받을 때 헤더를 먼저 보낸다
-  senseTaskStart(q);
+  controlTaskStart(ctrlQ);   // 제어가 먼저 떠서 부팅 배기(BOOT_VENT)를 시작한다
+  txTaskStart(q);            // 전송 태스크가 첫 프레임을 받을 때 헤더를 먼저 보낸다
+  senseTaskStart(q, ctrlQ);
 
   // 센싱을 먼저 시작한 "뒤에" BLE 를 켠다.
   // BLE 초기화가 실패하거나 느려도 센서 측정은 이미 돌고 있다 (워치는 보조 입력).

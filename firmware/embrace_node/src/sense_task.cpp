@@ -13,9 +13,12 @@
 #include "frame.h"
 
 static QueueHandle_t s_q = nullptr;
+static QueueHandle_t s_ctrlQ = nullptr;
 static volatile uint32_t s_drop = 0;
+static volatile uint32_t s_ctrlDrop = 0;
 
 uint32_t senseDropCount() { return s_drop; }
+uint32_t senseCtrlDropCount() { return s_ctrlDrop; }
 
 static void senseTask(void*) {
   Channel* ch = channels();
@@ -43,13 +46,15 @@ static void senseTask(void*) {
     f.work_us = micros() - startUs;
 
     if (xQueueSend(s_q, &f, 0) != pdTRUE) s_drop = s_drop + 1;
+    if (s_ctrlQ && xQueueSend(s_ctrlQ, &f, 0) != pdTRUE) s_ctrlDrop = s_ctrlDrop + 1;
 
     vTaskDelayUntil(&nextWake, pdMS_TO_TICKS(cfg::PERIOD_MS));
   }
 }
 
-void senseTaskStart(QueueHandle_t q) {
-  s_q = q;
+void senseTaskStart(QueueHandle_t txQ, QueueHandle_t ctrlQ) {
+  s_q = txQ;
+  s_ctrlQ = ctrlQ;
   xTaskCreatePinnedToCore(senseTask, "sense", cfg::TASK_STACK, nullptr,
                           cfg::SENSE_PRIO, nullptr, cfg::SENSE_CORE);
 }
