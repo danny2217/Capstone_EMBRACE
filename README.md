@@ -287,3 +287,36 @@ for line in serial_lines("COM5", 115200):
 
 
 ---
+
+
+## 📁 앱 코드 구조 (embrace-app)
+
+```
+embrace-app/app/src/main/java/com/example/embraceapp/
+├── MainActivity.kt          앱 시작점 (화면 연결만 담당)
+├── model/
+│   ├── SensorModels.kt      센서·알림 데이터 모양 (VitalSigns, AlertItem 등)
+│   └── UserModels.kt        회원가입 입력값, 사용자 프로필
+├── data/
+│   ├── SensorRepository.kt  센서 값 보관 (서버 연결 시 여기만 교체)
+│   ├── AuthRepository.kt    Firebase 로그인·회원가입
+│   └── AppConfig.kt         MQTT 서버 주소 등 설정
+├── ble/
+│   └── BleScanner.kt        블루투스(BLE) 기기 검색
+├── util/
+│   ├── Permissions.kt       권한 요청
+│   └── Notifier.kt          알림 보내기
+└── ui/
+    ├── AppNav.kt            화면 이동
+    ├── theme/Theme.kt       색상
+    ├── components/          공통 버튼·입력창·하단바
+    ├── auth/                로그인·회원가입
+    ├── home/                홈(호흡·기기·SOS)
+    ├── notification/        알림
+    ├── map/                 지도
+    └── profile/             프로필·설정
+```
+
+### 확장 계획
+- **AWS 서버**: `data/AppConfig.kt`의 주소만 바꾸고 `SensorRepository.kt`에서 MQTT로 값을 받도록 교체
+- **센서(BLE) 연동**: `ble/BleScanner.kt`에 기기 연결·데이터 수신 기능을 이어서 추가
