@@ -48,6 +48,16 @@ class Command(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc)
 
 
+class SensorReading(Base):
+    __tablename__ = "sensor_readings"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    device_id: Mapped[str] = mapped_column(String, index=True)
+    fsr_chest: Mapped[float | None] = mapped_column(Float, nullable=True)
+    fsr_shoulder: Mapped[float | None] = mapped_column(Float, nullable=True)
+    breath: Mapped[float | None] = mapped_column(Float, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc)
+
+
 Base.metadata.create_all(engine)  # 테이블이 없으면 자동 생성
 
 
@@ -67,6 +77,13 @@ class VitalIn(BaseModel):
 class CommandIn(BaseModel):
     device_id: str
     action: str = Field(pattern="^(inflate|deflate)$")
+
+
+class SensorIn(BaseModel):
+    device_id: str
+    fsr_chest: float | None = None
+    fsr_shoulder: float | None = None
+    breath: float | None = None
 
 
 # ---------- 공통 ----------
@@ -128,6 +145,27 @@ def latest_vitals(child_id: str, db: Session = Depends(get_db)):
     ).first()
     if item is None:
         raise HTTPException(status_code=404, detail="no vitals yet")
+    return row(item)
+
+
+# ---------- 조끼 센서 (FSR, 호흡 벨트) ----------
+@app.post("/api/sensors", dependencies=auth)
+def post_sensors(body: SensorIn, db: Session = Depends(get_db)):
+    item = SensorReading(**body.model_dump())
+    db.add(item)
+    db.commit()
+    return {"id": item.id}
+
+
+@app.get("/api/sensors/latest", dependencies=auth)
+def latest_sensors(device_id: str, db: Session = Depends(get_db)):
+    item = db.scalars(
+        select(SensorReading)
+        .where(SensorReading.device_id == device_id)
+        .order_by(SensorReading.id.desc())
+    ).first()
+    if item is None:
+        raise HTTPException(status_code=404, detail="no sensor data yet")
     return row(item)
 
 
