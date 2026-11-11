@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "574352342468",
+    "project_id": "embrace-74bc2",
+    "storage_bucket": "embrace-74bc2.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:574352342468:android:2e070cdeffa66bac2fb891",
+        "android_client_info": {
+          "package_name": "com.example.embraceapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAJUuZUExwt6DPvl972M5tuliJXmcPS80A"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
