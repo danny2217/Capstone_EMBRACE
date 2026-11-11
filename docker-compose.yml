@@ -1,11 +1,11 @@
-version: '3.8'
-
 services:
-  # 백엔드 API 서버
   backend:
     build: .
     ports:
       - "8080:8080"
+    env_file: .env
     environment:
-      - DATABASE_URL=sqlite:///./embrace.db
+      - DATABASE_URL=sqlite:////data/embrace.db
+    volumes:
+      - ./data:/data
     restart: always
