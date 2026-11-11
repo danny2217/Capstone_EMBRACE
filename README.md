@@ -295,7 +295,7 @@ for line in serial_lines("COM5", 115200):
 embrace-app/app/src/main/java/com/example/embraceapp/
 ├── MainActivity.kt          앱 시작점 (화면 연결만 담당)
 ├── model/
-│   ├── SensorModels.kt      센서·알림 데이터 모양 (VitalSigns, AlertItem 등)
+│   ├── SensorModels.kt      센서·알림 데이터 모양 
 │   └── UserModels.kt        회원가입 입력값, 사용자 프로필
 ├── data/
 │   ├── SensorRepository.kt  센서 값 보관 (서버 연결 시 여기만 교체)
