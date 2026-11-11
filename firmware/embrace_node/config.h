@@ -124,6 +124,28 @@ constexpr uint32_t HEADER_EVERY_MS = 5000;  // 헤더 재전송 주기 (PC 가 �
 constexpr bool     REPORT_RATE     = true;  // 1 s 마다 '# fs=...' 진단 줄
 constexpr uint8_t  QUEUE_LEN       = 50;    // 센싱 → 전송 큐 길이 (1 s 분량)
 
+// ---------------------------------------------------------------------------
+//  8) 워치 심박 수신 (BLE) — 프로토콜: docs/ble_hr_protocol.md
+// ---------------------------------------------------------------------------
+//  ESP 가 BLE "서버(peripheral)" 로 광고하고, 워치 앱이 접속해서 1 초마다 심박을 써 넣는다.
+//  워치가 없거나 끊겨도 센서·공압은 그대로 동작한다. 심박은 "있으면 쓰는" 보조 입력이다.
+//
+//  심박 상태 3가지
+//    none  : 한 번도 받은 적 없음 (워치 없이 쓰는 경우)
+//    stale : 받았었지만 HR_STALE_MS 동안 새 값이 없음 → 판단에서 뺀다
+//    fresh : 최근 값이 있고, 끊겼다 돌아온 뒤 HR_REJOIN_SAMPLES 개 이상 연속으로 받음
+//            → 판단에 다시 넣는다 (돌아오자마자 튀는 첫 값으로 판단하지 않게)
+constexpr bool     ENABLE_HR_BLE     = true;          // false 면 BLE 를 아예 켜지 않는다
+constexpr char     BLE_DEVICE_NAME[] = "EMBRACE-VEST"; // 워치 앱이 이 이름/서비스로 찾는다
+constexpr uint32_t HR_STALE_MS       = 12000;         // 이 시간 동안 새 심박이 없으면 stale
+                                                      //  워치 화면이 꺼지면 심박이 5 초씩 묶여서 온다
+                                                      //  (BatchingMode.HEART_RATE_5_SECONDS). 5 s 로 두면
+                                                      //  정상인데도 stale↔fresh 를 오간다 → 묶음 2회 + 여유
+constexpr uint8_t  HR_REJOIN_SAMPLES = 3;             // stale → fresh 로 돌아가는 데 필요한 연속 수신 수
+constexpr uint8_t  HR_MIN_BPM        = 30;            // 이 범위를 벗어난 값은 버린다 (센서 오류)
+constexpr uint8_t  HR_MAX_BPM        = 230;
+constexpr uint32_t HR_REPORT_MS      = 1000;          // '# hr ...' 진단 줄 주기
+
 // 태스크 배치 (코어 1 = Arduino 기본 코어)
 constexpr int      SENSE_CORE  = 1;
 constexpr unsigned SENSE_PRIO  = 3;

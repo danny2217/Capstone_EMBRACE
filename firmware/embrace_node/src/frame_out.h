@@ -4,6 +4,6 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 
-#define EMBRACE_FW_VERSION "2.0.0"
+#define EMBRACE_FW_VERSION "2.1.0"   // 2.1: 워치 심박 BLE 수신 추가
 
 void txTaskStart(QueueHandle_t q);

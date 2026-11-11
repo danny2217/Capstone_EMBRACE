@@ -7,6 +7,7 @@
 #include "channel.h"
 #include "frame.h"
 #include "frame_out.h"
+#include "hr_link.h"
 #include "sense_task.h"
 
 // 보드 선택 검사: 이 코드는 ESP32-S3 의 ADC1 핀 배치(GPIO1~10)를 전제로 한다.
@@ -34,4 +35,8 @@ void embraceBegin() {
   }
   txTaskStart(q);      // 전송 태스크가 첫 프레임을 받을 때 헤더를 먼저 보낸다
   senseTaskStart(q);
+
+  // 센싱을 먼저 시작한 "뒤에" BLE 를 켠다.
+  // BLE 초기화가 실패하거나 느려도 센서 측정은 이미 돌고 있다 (워치는 보조 입력).
+  hrLinkBegin();
 }

@@ -8,6 +8,8 @@
 //    # WARN ch=.. state=..    상태가 정상 → 단선/단락 으로 바뀜
 //    # INFO ch=.. state=ok    상태가 정상으로 돌아옴
 //    # fs=...                 1 s 마다 실측 주기·작업 시간·유실 수
+//    # hr state=.. bpm=..      1 s 마다 워치 심박 상태 (ENABLE_HR_BLE 일 때만)
+//                             state: none(받은 적 없음) / stale(끊김) / rejoining(복귀 중) / fresh(사용 가능)
 //
 //  flags 열: 채널당 한 글자 (0 정상, 1 단선, 2 단락), 데이터 열 순서대로 이어 붙임. 예) 00010
 #include "frame_out.h"
@@ -15,6 +17,7 @@
 #include "adc_reader.h"
 #include "channel.h"
 #include "frame.h"
+#include "hr_link.h"
 #include "sense_task.h"
 
 static QueueHandle_t s_q = nullptr;
@@ -119,10 +122,27 @@ struct RateStats {
 };
 
 // ----------------------------------------------------------------------------
+//  워치 심박 진단 줄 — 데이터 열이 아니라 '#' 줄로 보낸다
+//  → 기존 PC 프로그램(embrace_link.py)은 모르는 '#' 줄을 진단으로만 넘기므로 깨지지 않는다
+// ----------------------------------------------------------------------------
+static void printHr() {
+  const HrStatus h = hrLinkGet();
+  if (h.ageMs == UINT32_MAX) {
+    Serial.printf("# hr state=%s conn=%u rx=%lu bad=%lu\n", hrStateName(h.state), h.connections,
+                  (unsigned long)h.rxCount, (unsigned long)h.badCount);
+  } else {
+    Serial.printf("# hr state=%s bpm=%u age_ms=%lu conn=%u rx=%lu bad=%lu\n", hrStateName(h.state),
+                  h.bpm, (unsigned long)h.ageMs, h.connections, (unsigned long)h.rxCount,
+                  (unsigned long)h.badCount);
+  }
+}
+
+// ----------------------------------------------------------------------------
 static void txTask(void*) {
   uint8_t lastHealth[MAX_CH] = {0};
   RateStats rate;
   uint32_t lastHeaderMs = 0;
+  uint32_t lastHrMs = 0;
   bool headerDue = true;
   Frame f;
 
@@ -141,6 +161,10 @@ static void txTask(void*) {
     printHealthChanges(f, lastHealth);
     printFrame(f);
     if (cfg::REPORT_RATE) rate.add(f);
+    if (cfg::ENABLE_HR_BLE && millis() - lastHrMs >= cfg::HR_REPORT_MS) {
+      printHr();
+      lastHrMs = millis();
+    }
   }
 }
 
