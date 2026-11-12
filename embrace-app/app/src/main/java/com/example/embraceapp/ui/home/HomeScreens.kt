@@ -323,7 +323,14 @@ fun DeviceTab() {
         permissions = btPerms,
         title = "블루투스 권한",
         message = "조끼와 워치를 찾고 연결하려면 주변 기기 권한이 필요해요."
-    ) { ok -> if (ok) BleScanner.start(ctx) } // 권한이 허용되면 기기 검색 시작
+    ) { ok ->
+        // 권한이 허용되면 기기 검색 시작. 블루투스가 꺼져 있으면 안내
+        if (ok && !BleScanner.start(ctx))
+            android.widget.Toast.makeText(ctx, "블루투스를 켜 주세요", android.widget.Toast.LENGTH_SHORT).show()
+    }
+    val scanning by BleScanner.scanning.collectAsState() // 검색 중인지
+    val found by BleScanner.found.collectAsState()       // 검색된 기기 목록
+    var scanned by remember { mutableStateOf(false) }    // 한 번이라도 검색했는지
     // 기기 검색 바
     Surface(
         shape = RoundedCornerShape(30.dp), color = BgPeach, shadowElevation = 6.dp,
@@ -333,11 +340,33 @@ fun DeviceTab() {
             Icon(painterResource(R.drawable.ic_bluetooth), null, tint = IconGray, modifier = Modifier.size(26.dp))
             Spacer(Modifier.width(12.dp))
             Text("검색된 기기 목록", Modifier.weight(1f), fontSize = 14.sp, color = TextCharcoal)
-            Row(Modifier.clickable { requestBt() }, verticalAlignment = Alignment.CenterVertically) {
-                Icon(painterResource(R.drawable.ic_refresh), null, tint = Color.Unspecified, modifier = Modifier.size(20.dp))
+            // 다시 스캔 버튼: 검색 중에는 빙글빙글 돌고 눌리지 않음
+            Row(
+                Modifier.clip(RoundedCornerShape(12.dp)).clickable(enabled = !scanning) { scanned = true; requestBt() }.padding(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (scanning) {
+                    CircularProgressIndicator(Modifier.size(18.dp), color = AccentBlue, strokeWidth = 2.dp)
+                } else {
+                    Icon(painterResource(R.drawable.ic_refresh), null, tint = Color.Unspecified, modifier = Modifier.size(20.dp))
+                }
                 Spacer(Modifier.width(4.dp))
-                Text("다시 스캔", fontSize = 14.sp, color = TextCharcoal)
+                Text(if (scanning) "스캔 중..." else "다시 스캔", fontSize = 14.sp, color = TextCharcoal)
             }
+        }
+    }
+    // 검색된 기기 목록 (신호가 센 순서)
+    if (scanned || found.isNotEmpty()) {
+        Spacer(Modifier.height(14.dp))
+        if (found.isEmpty()) {
+            Text(
+                if (scanning) "주변 기기를 찾는 중이에요..." else "검색된 기기가 없어요. 블루투스가 켜져 있는지 확인해 주세요.",
+                fontSize = 12.sp, color = TextCharcoal, modifier = Modifier.padding(horizontal = 8.dp)
+            )
+        }
+        found.sortedByDescending { it.signal }.forEach { d ->
+            FoundDeviceRow(d.name, d.address, d.signal)
+            Spacer(Modifier.height(10.dp))
         }
     }
     Spacer(Modifier.height(22.dp))
@@ -357,6 +386,27 @@ fun DeviceTab() {
             var on by remember { mutableStateOf(true) }
             Switch(on, { on = it }, colors = SwitchDefaults.colors(checkedTrackColor = AccentBlue, checkedThumbColor = Color.White))
         }
+    }
+}
+
+// 검색된 기기 한 줄 (이름 + 주소 + 신호 세기 + 연결 버튼)
+@Composable
+fun FoundDeviceRow(name: String, address: String, signal: Int) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(painterResource(R.drawable.ic_bluetooth), null, tint = IconGray, modifier = Modifier.size(22.dp))
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            Text(name, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = TextCharcoal, maxLines = 1)
+            Text("$address · ${signal}dBm", fontSize = 10.sp, color = IconGray, maxLines = 1)
+        }
+        Button(
+            // 실제 연결(GATT)은 센서 담당과 정한 뒤 BleScanner에 이어서 추가
+            onClick = { android.widget.Toast.makeText(ctx, "연결 기능은 준비 중이에요", android.widget.Toast.LENGTH_SHORT).show() },
+            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = PrimaryCoral, contentColor = TextCharcoal),
+            modifier = Modifier.height(30.dp)
+        ) { Text("연결", fontSize = 11.sp, maxLines = 1) }
     }
 }
 
