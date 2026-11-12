@@ -116,6 +116,12 @@ fun NotificationScreen(nav: Nav) {
     // 화면을 열면 모두 읽음 처리 (벨의 빨간 숫자 사라짐)
     LaunchedEffect(Unit) { SensorRepository.markAllRead() }
     PinkPage("알림", onBack = { nav.back() }, onBell = { }) {
+        if (alerts.isEmpty()) {
+            Spacer(Modifier.height(80.dp))
+            Text("새로운 알림이 없어요", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = TextCharcoal)
+            Spacer(Modifier.height(6.dp))
+            Text("과부하 징후나 비상 상황이 감지되면 여기에 표시돼요.", fontSize = 12.sp, color = IconGray, textAlign = TextAlign.Center)
+        }
         alerts.groupBy { it.day }.forEach { (day, items) ->
             Text(day, Modifier.fillMaxWidth().padding(top = 8.dp), fontSize = 14.sp)
             items.forEach { a ->
