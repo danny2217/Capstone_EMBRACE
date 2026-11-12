@@ -20,7 +20,7 @@ object SensorRepository {
     private val _state = MutableStateFlow(SensorState())
     val state: StateFlow<SensorState> = _state.asStateFlow()
 
-    private val _alerts = MutableStateFlow(sampleAlerts())
+    private val _alerts = MutableStateFlow<List<AlertItem>>(emptyList()) // 처음엔 비어 있음. 서버에서 알림이 오면 addAlert로 추가
     val alerts: StateFlow<List<AlertItem>> = _alerts.asStateFlow()
 
     // ── 센서 값 갱신 (MQTT 수신 시 호출) ──
@@ -65,11 +65,8 @@ object SensorRepository {
         _alerts.update { list -> list.map { it.copy(read = true) } }
     }
 
-    // 지금은 예시 알림 (서버 연결 전)
-    private fun sampleAlerts() = listOf(
-        AlertItem(1, AlertLevel.Warning, "경고!", "과부화 징후 발견", "17:00 - 10월 25일", "오늘"),
-        AlertItem(2, AlertLevel.Stable, "안정", "감각 과부하 감지 후 자동 압박이 실행되어\n심박수가 정상 범위로 복귀되었습니다.", "16:58 - 10월 24일", "어제", read = true),
-        AlertItem(3, AlertLevel.Danger, "위험!", "과부화 발생", "17:00 - 10월 24일", "어제", location = "흑석동 흑석로3길 29-1", read = true),
-        AlertItem(4, AlertLevel.Warning, "경고!", "과부화 징후 발견", "16:58 - 10월 24일", "어제", read = true)
-    )
+    // 알림 전부 지우기 (필요할 때 호출)
+    fun clearAlerts() {
+        _alerts.value = emptyList()
+    }
 }
