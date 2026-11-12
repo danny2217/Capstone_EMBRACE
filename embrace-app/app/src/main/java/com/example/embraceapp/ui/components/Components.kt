@@ -161,7 +161,7 @@ fun PinkPage(
     bottomContent: (@Composable ColumnScope.() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    Column(Modifier.fillMaxSize().background(PrimaryCoral)) {
+    Column(Modifier.fillMaxSize().background(PrimaryCoral).imePadding()) {
         // 헤더 (뒤로가기, 제목, 벨)
         Box(
             Modifier.fillMaxWidth().statusBarsPadding().height(headerHeight).padding(horizontal = 16.dp)
