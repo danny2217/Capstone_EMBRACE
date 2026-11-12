@@ -30,11 +30,11 @@ object BleScanner {
 
     // 검색 시작 (권한이 허용된 뒤에 호출). 10초 뒤 자동 종료
     @SuppressLint("MissingPermission")
-    fun start(ctx: Context) {
-        if (_scanning.value) return
+    fun start(ctx: Context): Boolean { // 검색을 시작했으면 true, 블루투스가 꺼져 있으면 false
+        if (_scanning.value) return true
         val adapter = (ctx.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager)?.adapter
         val scanner = adapter?.bluetoothLeScanner
-        if (adapter == null || !adapter.isEnabled || scanner == null) return // 블루투스가 꺼져 있거나 기기에 없음
+        if (adapter == null || !adapter.isEnabled || scanner == null) return false // 블루투스가 꺼져 있거나 기기에 없음
 
         _found.value = emptyList()
         val cb = object : ScanCallback() {
@@ -49,6 +49,7 @@ object BleScanner {
         _scanning.value = true
         scanner.startScan(cb)
         handler.postDelayed({ stop(ctx) }, 10_000)
+        return true
     }
 
     // 검색 멈추기
