@@ -1,5 +1,6 @@
 // breath_analyzer.cpp — 설명은 breath_analyzer.h
 #include "breath_analyzer.h"
+#include <math.h>
 
 // 한 번의 호흡으로 인정할 주기 범위 (ms). 밖이면 잡음/자세 변화로 보고 버린다.
 static constexpr uint32_t MIN_CYCLE_MS = 1000;    // 60 회/분
@@ -13,6 +14,7 @@ void BreathAnalyzer::reset() {
 }
 
 void BreathAnalyzer::push(uint32_t t, float x, bool healthy) {
+  if (healthy && !healthy_) healthySince_ = t;   // 정상으로 돌아온 순간부터 '인식 불가' 시간을 센다
   healthy_ = healthy;
   if (!healthy) {          // 단선/단락 중 값은 의미 없음 → 검출 상태를 처음부터 다시
     phase_ = Phase::Unknown;
@@ -94,6 +96,8 @@ void BreathAnalyzer::onTrough(uint32_t t, float v) {
       c.ampMv = static_cast<uint16_t>(amp > 0 ? (amp < 65535.f ? amp : 65535.f) : 0);
       head_ = (head_ + 1) % RING;
       if (count_ < RING) count_++;
+      haveCycle_ = true;
+      lastCycleT_ = t;
     }
     inhalePending_ = false;
   }
@@ -124,5 +128,27 @@ BreathMetrics BreathAnalyzer::metrics(uint32_t now, uint32_t windowMs) const {
     m.ampMv = static_cast<uint16_t>(sumAmp / n);
   }
   m.valid = healthy_ && n >= 3;
+
+  // 호흡 주기 변동계수 — 두 번째 훑기 (n ≤ 64, 50 Hz 에서 충분히 가볍다)
+  if (n >= 3) {
+    const float mean = static_cast<float>(sumIn + sumEx) / n;
+    float var = 0;
+    for (uint8_t i = 0; i < n; i++) {
+      const Cycle& c = ring_[(head_ + RING - 1 - i) % RING];
+      const float d = static_cast<float>(c.inhaleMs + c.exhaleMs) - mean;
+      var += d * d;
+    }
+    m.cycleCv = mean > 0 ? sqrtf(var / n) / mean : 0;
+  }
+
+  // 지금 진행 중인 단계의 길이 (들숨 유지 / 날숨 지속 판정용)
+  if (healthy_) {
+    if (phase_ == Phase::Rising && haveTrough_) m.inhaleNowMs = now - troughT_;
+    if (phase_ == Phase::Falling && havePeak_) m.exhaleNowMs = now - peakT_;
+    // 인식 불가 시간: 센서가 정상이 된 뒤의 마지막 완성 호흡부터 (없으면 정상이 된 순간부터)
+    uint32_t ref = healthySince_;
+    if (haveCycle_ && static_cast<int32_t>(lastCycleT_ - healthySince_) > 0) ref = lastCycleT_;
+    m.noCycleMs = now - ref;
+  }
   return m;
 }

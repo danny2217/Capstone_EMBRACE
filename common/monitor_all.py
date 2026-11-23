@@ -148,7 +148,10 @@ def run_live(src: Source, window_s: float, log_csv: bool, is_demo: bool) -> None
             summary.on_diag(d, tl.t)
             if d.startswith("# fs="):
                 state["dev_fs"] = d.split()[1].split("=")[1]
-            elif d.startswith(("# WARN", "# INFO")):
+            elif d.startswith(("# WARN", "# INFO", "# EVT")):
+                print(f"[{tl.t:8.2f} s] {d}")
+            elif d.startswith(("# ctl", "# hr ")) and not state.get("quiet_ctl"):
+                # 판단·공압 상태(1 s), 워치 심박 상태(1 s) — 튜닝할 때 이 줄을 읽는다
                 print(f"[{tl.t:8.2f} s] {d}")
 
     def save(tag: str = "") -> None:

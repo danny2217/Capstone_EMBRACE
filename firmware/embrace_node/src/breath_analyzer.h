@@ -19,6 +19,11 @@ struct BreathMetrics {
   uint16_t ampMv;        // 평균 진폭 (봉우리 - 골짜기)
   bool     apnea;        // 한 번이라도 호흡을 본 뒤, APNEA_MS 동안 꼭지점이 없음
   uint32_t sinceLastMs;  // 마지막 꼭지점 이후 시간
+  float    cycleCv;      // 창 안 호흡 주기의 변동계수 (표준편차/평균). 완성 호흡 3번 미만이면 0
+  uint32_t inhaleNowMs;  // 지금 들숨 단계(골짜기 이후, 봉우리 전)가 계속된 시간. 들숨 중이 아니면 0
+  uint32_t exhaleNowMs;  // 지금 날숨 단계(봉우리 이후, 골짜기 전)가 계속된 시간. 날숨 중이 아니면 0
+  uint32_t noCycleMs;    // 센서 정상 상태에서 마지막 "완성된 호흡" 이후 시간 (호흡 인식 불가 판정용).
+                         //   센서 이상이면 0 (고장은 인식 불가와 다르다)
 };
 
 class BreathAnalyzer {
@@ -57,6 +62,9 @@ class BreathAnalyzer {
   bool everExtreme_ = false;
   uint32_t lastExtremeT_ = 0;
   bool healthy_ = false;
+  uint32_t healthySince_ = 0;   // 센서가 정상으로 돌아온 시각
+  bool haveCycle_ = false;
+  uint32_t lastCycleT_ = 0;     // 마지막 완성 호흡 시각 (골짜기 시각)
 
   Cycle ring_[RING] = {};
   uint8_t head_ = 0, count_ = 0;

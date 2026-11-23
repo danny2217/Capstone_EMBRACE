@@ -24,3 +24,22 @@ void ctlPrintStatus();
 void ctlPrintEvents();
 // 판단 기준·공압 설정 2줄 ('# det ...', '# pn ...') — 헤더와 함께 찍는다
 void ctlPrintConfig();
+// ============================================================================
+//  폰 앱으로 보낼 상태 요약. hr_link.cpp 의 statusTask 가 1 초마다 읽는다.
+// ============================================================================
+struct CtlStatus {
+	CtlState state;
+	uint32_t inStateMs;      // 지금 상태에 들어온 뒤 시간
+	uint32_t cycles;         // 유지까지 간 가압 횟수
+	bool     pump, valveOpen, framesOk, armed;
+	bool     overload;       // 과부하 확정
+	uint8_t  score;          // 판단 점수 합
+	bool     breathValid;    // 1 분 창 호흡수가 믿을 만한가
+	bool     breathHealthy;  // 호흡 센서 정상
+	bool     apnea;          // 무호흡
+	float    breathRate;     // 분당 호흡수 (1 분 창)
+	float    ieRatio;        // 들숨/날숨 (1 분 창)
+	uint16_t gripL, gripR;   // 악력 이동평균 (mV)
+	uint16_t compMaxMv;      // 가슴·등 압박 중 큰 값 (mV)
+};
+bool ctlGetStatus(CtlStatus& out);

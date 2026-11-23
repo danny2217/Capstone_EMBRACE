@@ -11,7 +11,7 @@
 //    # det ... / # pn ...      판단 기준·공압 설정 (헤더와 함께) — detect_config.h / config.h 9절
 //    # ctl st=.. score=..      1 s 마다 제어 상태 (상태·점수·호흡수·I:E·악력·압박·심박·출력)
 //    # EVT a->b why=..         상태 전이, 거부된 명령
-//    # hr state=.. bpm=..      1 s 마다 워치 심박 상태 (ENABLE_HR_BLE 일 때만)
+//    # hr state=.. bpm=..      1 s 마다 심박(폰 앱 경유) + 앱 연결 상태 (ENABLE_HR_BLE 일 때만)
 //                             state: none(받은 적 없음) / stale(끊김) / rejoining(복귀 중) / fresh(사용 가능)
 //
 //  flags 열: 채널당 한 글자 (0 정상, 1 단선, 2 단락), 데이터 열 순서대로 이어 붙임. 예) 00010
@@ -133,13 +133,17 @@ struct RateStats {
 static void printHr() {
   const HrStatus h = hrLinkGet();
   if (h.ageMs == UINT32_MAX) {
-    Serial.printf("# hr state=%s conn=%u rx=%lu bad=%lu\n", hrStateName(h.state), h.connections,
+    Serial.printf("# hr state=%s conn=%u rx=%lu bad=%lu", hrStateName(h.state), h.connections,
                   (unsigned long)h.rxCount, (unsigned long)h.badCount);
   } else {
-    Serial.printf("# hr state=%s bpm=%u age_ms=%lu conn=%u rx=%lu bad=%lu\n", hrStateName(h.state),
+    Serial.printf("# hr state=%s bpm=%u age_ms=%lu conn=%u rx=%lu bad=%lu", hrStateName(h.state),
                   h.bpm, (unsigned long)h.ageMs, h.connections, (unsigned long)h.rxCount,
                   (unsigned long)h.badCount);
   }
+  // v2: 폰 앱 쪽 진단 — 상태 알림을 몇 번 보냈나, 앱 명령(d/x)을 몇 번 받았나/거부했나
+  const AppLinkStats a = appLinkStats();
+  Serial.printf(" app_tx=%lu app_cmd=%lu app_cmd_bad=%lu\n", (unsigned long)a.statusSent,
+                (unsigned long)a.cmdAccepted, (unsigned long)a.cmdRejected);
 }
 
 // ----------------------------------------------------------------------------

@@ -7,18 +7,29 @@
 #include "frame.h"
 #include "hr_link.h"
 
-// 어떤 규칙이 점수를 줬는지 (로그용 비트)
-enum RuleBit : uint8_t {
-  RULE_BREATH_FAST = 1 << 0,   // B
-  RULE_IE_HIGH     = 1 << 1,   // E
-  RULE_GRIP_HOLD   = 1 << 2,   // G
-  RULE_HR_HIGH     = 1 << 3,   // H
+// 어떤 규칙이 점수를 줬는지 (로그용 비트). '# ctl' 의 rules= 글자 순서와 같다: BIXVE GP H U
+enum RuleBit : uint16_t {
+  RULE_BREATH_FAST = 1 << 0,   // B 빠른 호흡          (호흡)
+  RULE_INHALE_HOLD = 1 << 1,   // I 들숨 유지           (호흡)
+  RULE_EXHALE_HOLD = 1 << 2,   // X 날숨 지속           (호흡)
+  RULE_BREATH_VAR  = 1 << 3,   // V 호흡 간격 변동성    (호흡)
+  RULE_IE_HIGH     = 1 << 4,   // E 들숨:날숨 비율      (호흡)
+  RULE_GRIP_HOLD   = 1 << 5,   // G 강한 쥠 지속        (악력)
+  RULE_GRIP_PULSE  = 1 << 6,   // P 반복 쥐어짜기       (악력)
+  RULE_HR_HIGH     = 1 << 7,   // H 위험 심박           (심박)
+  RULE_UNREC       = 1 << 8,   // U 경로 2: 호흡 안 보임 + 강한 쥠 10 s
 };
 
+// 어느 경로로 조건이 성립했나
+enum class DetectPath : uint8_t { None = 0, Breath = 1, Unrec = 2 };
+
 struct DetectResult {
-  uint8_t  score;          // 전체 점수
-  uint8_t  nonHrScore;     // 심박을 뺀 점수
-  uint8_t  rules;          // RuleBit 조합
+  uint8_t  score;          // 전체 점수 (호흡 + 악력 + 심박)
+  uint8_t  breathScore;    // 그중 호흡 규칙 점수 (경로 1 의 1순위 조건)
+  uint16_t rules;          // RuleBit 조합
+  DetectPath path;         // 지금 성립한 경로 (확정 전에도 표시)
+  bool     breathUnrec;    // 호흡 인식 불가 (센서 정상 + 완성 호흡 UNREC_BREATH_MS 동안 없음)
+  uint8_t  gripPulses;     // 최근 GRIP_PULSE_WINDOW_MS 안의 강한 쥠 시작 횟수
   bool     overload;       // 조건이 CONFIRM_MS 동안 유지됨 (확정)
   uint32_t overloadForMs;  // 조건이 유지된 시간 (확정 전에도 증가)
   uint32_t calmForMs;      // 점수 ≤ CALM_SCORE 가 유지된 시간

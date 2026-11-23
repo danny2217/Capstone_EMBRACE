@@ -4,6 +4,6 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 
-#define EMBRACE_FW_VERSION "2.2.0"   // 2.1: 워치 심박 BLE, 2.2: 판단·공압 상태 머신
+#define EMBRACE_FW_VERSION "2.3.0"   // 2.1: 워치 심박 BLE, 2.2: 판단·공압 상태 머신, 2.3: 성인 기준·호흡 1순위 판정
 
 void txTaskStart(QueueHandle_t q);

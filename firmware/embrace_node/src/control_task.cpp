@@ -35,6 +35,7 @@ static uint32_t s_lastFrameMs = 0;
 static bool     s_compOver = false;
 static uint32_t s_compOverSince = 0;
 static uint32_t s_cycles = 0;          // 유지까지 간 가압 횟수
+static uint32_t s_airSinceMs = 0;      // 가압(INFLATE)을 시작한 시각 — 무호흡 배기 유예 기준
 static uint32_t s_evtDrop = 0;
 
 // 전송 태스크가 읽는 스냅샷
@@ -86,6 +87,7 @@ static void enter(CtlState next, uint32_t now, const char* why) {
   if (next == s_state) return;
   event("# EVT %s->%s why=%s", ctlStateName(s_state), ctlStateName(next), why);
   if (s_state == CtlState::Inflate && next == CtlState::Hold) s_cycles++;
+  if (next == CtlState::Inflate) s_airSinceMs = now;
   s_state = next;
   s_enteredMs = now;
   bool pump, valve;
@@ -101,7 +103,9 @@ static const char* dangerReason(uint32_t now, const DetectResult& d, bool frames
     return "comp_over_limit";
   if (d.compFault) return "comp_sensor_fault";
   if (cfg::EMERGENCY_ON_BREATH_FAULT && d.breathEnabled && !d.breathHealthy) return "breath_sensor_fault";
-  if (d.breath.apnea) return "apnea";
+  // 무호흡: 꼭지점이 BREATH_APNEA_MS 동안 없음. 단 "가압 시작 후" 그 시간이 지나야 인정한다.
+  //  → 경로 2(호흡 안 보임)로 가압해도 곧바로 배기되지 않고, 가압 뒤 20 s 안에 호흡이 다시 보여야 한다.
+  if (d.breath.apnea && now - s_airSinceMs > det::BREATH_APNEA_MS) return "apnea";
   return nullptr;
 }
 
@@ -140,8 +144,9 @@ static void fsmStep(uint32_t now, const DetectResult& d, char cmd, bool estop, b
         if (!framesOk) reject(cmd, "sensing_not_ready");
         else enter(CtlState::Inflate, now, "manual_i");
       } else if (det::DETECT_ENABLED && framesOk && d.overload) {
-        char why[48];
-        snprintf(why, sizeof(why), "detect(score=%u,nonhr=%u)", d.score, d.nonHrScore);
+        char why[64];
+        snprintf(why, sizeof(why), "detect(path=%s,score=%u,br=%u,rules=0x%03x)",
+                 d.path == DetectPath::Unrec ? "unrec" : "breath", d.score, d.breathScore, d.rules);
         enter(CtlState::Inflate, now, why);
       }
       break;
@@ -277,22 +282,34 @@ void ctlPrintStatus() {
   portEXIT_CRITICAL(&s_snapLock);
   const DetectResult& d = s.d;
 
-  char rules[5] = {
-      (d.rules & RULE_BREATH_FAST) ? 'B' : '-', (d.rules & RULE_IE_HIGH) ? 'E' : '-',
-      (d.rules & RULE_GRIP_HOLD) ? 'G' : '-', (d.rules & RULE_HR_HIGH) ? 'H' : '-', '\0'};
+  // 규칙 글자: 호흡 BIXVE | 악력 GP | 심박 H | 경로2 U   (꺼진 규칙은 '-')
+  const char rules[] = {
+      (d.rules & RULE_BREATH_FAST) ? 'B' : '-', (d.rules & RULE_INHALE_HOLD) ? 'I' : '-',
+      (d.rules & RULE_EXHALE_HOLD) ? 'X' : '-', (d.rules & RULE_BREATH_VAR) ? 'V' : '-',
+      (d.rules & RULE_IE_HIGH) ? 'E' : '-',     '|',
+      (d.rules & RULE_GRIP_HOLD) ? 'G' : '-',   (d.rules & RULE_GRIP_PULSE) ? 'P' : '-', '|',
+      (d.rules & RULE_HR_HIGH) ? 'H' : '-',     '|',
+      (d.rules & RULE_UNREC) ? 'U' : '-',       '\0'};
+  const char* path = d.path == DetectPath::Breath ? "breath" : (d.path == DetectPath::Unrec ? "unrec" : "-");
   char hr[24];
   if (d.hr.usable()) snprintf(hr, sizeof(hr), "fresh:%u", d.hr.bpm);
   else snprintf(hr, sizeof(hr), "%s", hrStateName(d.hr.state));
 
   // 한 줄로: 상태 · 점수 · 호흡(수/비/진폭) · 악력 · 압박 · 심박 · 출력
-  Serial.printf("# ctl st=%s t=%lus score=%u/%u rules=%s conf=%lums "
-                "br_rate=%.1f ie=%.2f amp=%u n=%u br_ok=%d apnea=%d rate60=%.1f ie60=%.2f "
-                "grip_ms=%lu gl=%u gr=%u comp=%u hr=%s pump=%d valve=%s armed=%d cycles=%lu\n",
-                ctlStateName(s.state), (unsigned long)(s.inStateMs / 1000), d.score, d.nonHrScore,
-                rules, (unsigned long)d.overloadForMs, d.breath.ratePerMin, d.breath.ieRatio,
-                d.breath.ampMv, d.breath.cycles, d.breath.valid ? 1 : 0, d.breath.apnea ? 1 : 0,
+  //  score=전체/호흡  path=성립 경로  in/ex=지금 들숨·날숨 단계 길이(ms)  cv=호흡 주기 변동계수
+  //  nocyc=완성 호흡이 없었던 시간(ms)  unrec=호흡 인식 불가  gp=10 s 안 강한 쥠 횟수  gon=강한 쥠 문턱(mV)
+  Serial.printf("# ctl st=%s t=%lus score=%u/%u path=%s rules=%s conf=%lums "
+                "br_rate=%.1f ie=%.2f cv=%.2f in=%lu ex=%lu amp=%u n=%u br_ok=%d nocyc=%lu unrec=%d "
+                "apnea=%d rate60=%.1f ie60=%.2f "
+                "grip_ms=%lu gp=%u gl=%u gr=%u gon=%u comp=%u hr=%s pump=%d valve=%s armed=%d cycles=%lu\n",
+                ctlStateName(s.state), (unsigned long)(s.inStateMs / 1000), d.score, d.breathScore,
+                path, rules, (unsigned long)d.overloadForMs, d.breath.ratePerMin, d.breath.ieRatio,
+                d.breath.cycleCv, (unsigned long)d.breath.inhaleNowMs, (unsigned long)d.breath.exhaleNowMs,
+                d.breath.ampMv, d.breath.cycles, d.breath.valid ? 1 : 0,
+                (unsigned long)d.breath.noCycleMs, d.breathUnrec ? 1 : 0, d.breath.apnea ? 1 : 0,
                 d.breath60.ratePerMin, d.breath60.ieRatio,
-                (unsigned long)d.gripHoldMs, d.gripL, d.gripR, d.compMaxMv, hr, s.pump ? 1 : 0,
+                (unsigned long)d.gripHoldMs, d.gripPulses, d.gripL, d.gripR, det::GRIP_ON_MV,
+                d.compMaxMv, hr, s.pump ? 1 : 0,
                 s.valveOpen ? "open" : "closed", cfg::PNEUMATIC_ARMED ? 1 : 0,
                 (unsigned long)s.cycles);
 }
@@ -305,14 +322,23 @@ void ctlPrintEvents() {
 
 // 부팅 헤더에 판단 기준·공압 설정을 남긴다 → CSV 에 함께 기록되어 "어떤 기준으로 돌렸는지" 가 남는다
 void ctlPrintConfig() {
-  Serial.printf("# det enabled=%d trigger=%u min_nonhr=%u confirm_ms=%lu "
-                "B=%u:%u E=%u:%u G=%u/%u,%lums,both=%d:%u H=%u:%u "
-                "hyst=%u invert=%d window_ms=%lu/%lu apnea_ms=%lu early_release=%d\n",
-                det::DETECT_ENABLED ? 1 : 0, det::SCORE_TRIGGER, det::MIN_NON_HR_SCORE,
+  Serial.printf("# det v2.3 enabled=%d trigger=%u breath_min=%u confirm_ms=%lu "
+                "B=%u:%u I=%lums:%u X=%lums:%u V=%u*%u/10:%u E=%u:%u "
+                "grip_base=%u on=%u off=%u G=%lums:%u P=%ux/%lums:%u both=%d H=%u:%u "
+                "U=%d,%lums/%lums hyst=%u invert=%d window_ms=%lu/%lu apnea_ms=%lu early_release=%d\n",
+                det::DETECT_ENABLED ? 1 : 0, det::SCORE_TRIGGER, det::BREATH_MIN_SCORE,
                 (unsigned long)det::CONFIRM_MS, det::BREATH_RATE_HIGH, det::W_BREATH_FAST,
-                det::IE_HIGH_X100, det::W_IE, det::GRIP_ON_MV, det::GRIP_OFF_MV,
-                (unsigned long)det::GRIP_HOLD_MS, det::GRIP_REQUIRE_BOTH ? 1 : 0, det::W_GRIP,
-                det::HR_HIGH_BPM, det::W_HR, det::BREATH_HYST_MV, det::BREATH_INVERT ? 1 : 0,
+                (unsigned long)det::INHALE_HOLD_MS, det::W_INHALE_HOLD,
+                (unsigned long)det::EXHALE_HOLD_MS, det::W_EXHALE_HOLD,
+                det::BREATH_CV_BASE_X100, det::BREATH_CV_FACTOR_X10, det::W_BREATH_VAR,
+                det::IE_HIGH_X100, det::W_IE,
+                det::GRIP_BASE_MV, det::GRIP_ON_MV, det::GRIP_OFF_MV,
+                (unsigned long)det::GRIP_HOLD_MS, det::W_GRIP,
+                det::GRIP_PULSE_COUNT, (unsigned long)det::GRIP_PULSE_WINDOW_MS, det::W_GRIP_PULSE,
+                det::GRIP_REQUIRE_BOTH ? 1 : 0, det::HR_HIGH_BPM, det::W_HR,
+                det::UNREC_ENABLED ? 1 : 0, (unsigned long)det::UNREC_BREATH_MS,
+                (unsigned long)det::UNREC_GRIP_HOLD_MS,
+                det::BREATH_HYST_MV, det::BREATH_INVERT ? 1 : 0,
                 (unsigned long)det::BREATH_DETECT_WINDOW_MS, (unsigned long)det::BREATH_REPORT_WINDOW_MS,
                 (unsigned long)det::BREATH_APNEA_MS,
                 det::EARLY_RELEASE_ENABLED ? 1 : 0);
@@ -324,4 +350,37 @@ void ctlPrintConfig() {
                 (unsigned long)cfg::DEFLATE_MS, (unsigned long)cfg::COOLDOWN_MS,
                 (unsigned long)cfg::BOOT_VENT_MS, (unsigned long)cfg::COMP_TARGET_MV,
                 (unsigned long)cfg::COMP_LIMIT_MV, cfg::ENABLE_ESTOP_BUTTON ? 1 : 0);
+}
+
+
+// ============================================================================
+//  폰 앱 상태 알림용. publish() 가 채운 스냅샷을 락 안에서 복사해 필요한 것만 넘긴다.
+//  (Snapshot 은 이 파일 안에서만 보이는 구조체라 같은 파일에 둬야 한다)
+// ============================================================================
+bool ctlGetStatus(CtlStatus& o) {
+    if (!s_frameQ) return false;   // controlTaskStart() 전
+    Snapshot s;
+    portENTER_CRITICAL(&s_snapLock);
+    s = s_snap;
+    portEXIT_CRITICAL(&s_snapLock);
+    const DetectResult& d = s.d;
+
+    o.state = s.state;
+    o.inStateMs = s.inStateMs;
+    o.cycles = s.cycles;
+    o.pump = s.pump;
+    o.valveOpen = s.valveOpen;
+    o.framesOk = s.framesOk;
+    o.armed = cfg::PNEUMATIC_ARMED;
+    o.overload = d.overload;
+    o.score = d.score;
+    o.breathValid = d.breath60.valid;
+    o.breathHealthy = d.breathEnabled && d.breathHealthy;
+    o.apnea = d.breath.apnea;
+    o.breathRate = d.breath60.ratePerMin;
+    o.ieRatio = d.breath60.ieRatio;
+    o.gripL = d.gripL;
+    o.gripR = d.gripR;
+    o.compMaxMv = d.compMaxMv;
+    return true;
 }
