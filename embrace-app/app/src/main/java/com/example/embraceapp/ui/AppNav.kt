@@ -95,7 +95,7 @@ import com.example.embraceapp.ui.profile.*
 enum class Screen {
     Splash, AuthLaunch, Login,
     SignupType, SignupInfo, SignupDone,
-    ForgotEmail, ForgotNew, ForgotDone,
+    ForgotEmail, ForgotDone,
     Home, Notifications, Map,
     Profile, EditProfile, EditDone, ChangePw, ChangePwDone,
     Settings, NotiSettings, PwSettings, PwSettingsDone, DeleteAccount
@@ -117,9 +117,15 @@ fun EmbraceApp() {
     val s = nav.current
 
     // 시작 화면 2초 뒤 로그인/가입 선택 화면으로 이동
+    val ctx = androidx.compose.ui.platform.LocalContext.current
     LaunchedEffect(Unit) {
         delay(2000)
-        if (nav.current == Screen.Splash) nav.root(if (AuthRepository.isLoggedIn) Screen.Home else Screen.AuthLaunch) // 이미 로그인돼 있으면 바로 홈
+        if (nav.current == Screen.Splash) {
+            // 로그인 화면에서 "자동 로그인"을 체크하지 않았다면, 앱을 다시 켰을 때 로그아웃 상태로 시작
+            val auto = ctx.getSharedPreferences("embrace_prefs", android.content.Context.MODE_PRIVATE).getBoolean("auto_login", false)
+            if (AuthRepository.isLoggedIn && !auto) AuthRepository.logout()
+            nav.root(if (AuthRepository.isLoggedIn) Screen.Home else Screen.AuthLaunch) // 자동 로그인이면 바로 홈
+        }
     }
     BackHandler(enabled = nav.stack.size > 1) { nav.back() } // 폰의 뒤로가기 버튼 처리
 
@@ -156,8 +162,7 @@ fun EmbraceApp() {
                 Screen.SignupInfo -> SignupInfoScreen(nav)
                 Screen.SignupDone -> DoneScreen("회원가입 완료") { nav.root(Screen.Login) }
                 Screen.ForgotEmail -> ForgotEmailScreen(nav)
-                Screen.ForgotNew -> ForgotNewScreen(nav)
-                Screen.ForgotDone -> DoneScreen("비밀번호 변경 성공") { nav.root(Screen.Login) }
+                Screen.ForgotDone -> DoneScreen("재설정 메일을 보냈어요") { nav.root(Screen.Login) }
                 Screen.Home -> HomeScreen { nav.go(Screen.Notifications) }
                 Screen.Notifications -> NotificationScreen(nav)
                 Screen.Map -> MapScreen()
