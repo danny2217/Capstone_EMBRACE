@@ -290,7 +290,7 @@ fun BreathTab() {
             Column(Modifier.fillMaxSize(), Arrangement.Center, Alignment.CenterHorizontally) {
                 Row(verticalAlignment = Alignment.Bottom) {
                     Text("${sensor.vitals.breathRate}", fontSize = 48.sp, color = TextCharcoal)
-                    Text(" BPM", fontSize = 13.sp, color = TextCharcoal, modifier = Modifier.padding(bottom = 10.dp))
+                    Text(" 회/분", fontSize = 13.sp, color = TextCharcoal, modifier = Modifier.padding(bottom = 10.dp))
                 }
                 Spacer(Modifier.height(10.dp))
                 Text("호흡 수", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = TextCharcoal)
