@@ -20,6 +20,9 @@ class MainActivity : ComponentActivity() {
         Notifier.createChannel(this) // 알림 채널(소리/진동) 만들기
         AuthRepository.loadProfile() // 이미 로그인돼 있으면 내 정보 불러오기
         setContent {
+            // 로그인한 사람이 바뀌면 서버 동기화(자녀: 업로드 / 보호자: 조회)를 맞춰서 시작
+            val me by AuthRepository.profile.collectAsState()
+            LaunchedEffect(me) { ServerSync.onProfile(applicationContext, me) }
             // 색을 따로 안 정한 글씨의 기본 색 지정
             CompositionLocalProvider(LocalContentColor provides TextCharcoal) {
                 EmbraceApp()

@@ -1,4 +1,4 @@
-# EMBRACE 진행 현황 — 비주얼라이저 · 워치 앱 · 펌웨어 (2026-11-23 기준)
+# EMBRACE 진행 현황 — 비주얼라이저 · 워치 앱 · 폰 앱 · 서버 · 펌웨어 (2026-11-23 저녁 기준)
 
 > 팀원이 하드웨어를 같이 보면서 코드를 고칠 수 있도록 정리한 문서다.
 > **"검증됨"은 실제 보드·워치에서 돌려 본 것, "미검증"은 코드만 있고 실기에서 확인하지 않은 것이다.**
@@ -19,15 +19,16 @@
 
 - Wi-Fi(인터넷)는 **폰만** 쓴다. ESP 에는 Wi-Fi 코드가 없다.
 - 워치는 조끼에 직접 연결하지 않는다 (v1 의 워치→조끼 BLE 직접 연결 구조는 폐기).
-- 자세한 메시지 형식: `docs/ble_protocol.md` (v2). 옛 문서 `docs/ble_hr_protocol.md` 는 v1 이다.
+- 자세한 메시지 형식: `docs/ble_protocol.md` (v2, 11/23 작성). 옛 문서 `docs/ble_hr_protocol.md` 는 v1 이다.
+- 서버 API: `embrace-backend` 브랜치 `API.md`. 자녀 구분 키 `child_id` = 자녀 전화번호 숫자만.
 
 | 링크 | 방식 | 담당 코드 | 상태 |
 |---|---|---|---|
 | ① 워치 → 폰 | Data Layer `MessageClient`, JSON `/embrace/hr`, `/embrace/loc` | 워치 `PhoneLink.kt` → 폰 `WatchReceiver.kt` | 미검증 |
 | ② 폰 → 조끼 | BLE write `HR_IN` (4바이트, v1 형식 그대로) | 폰 앱 → ESP `hr_link.cpp` | 미검증 |
 | ③ 조끼 → 폰 | BLE notify `STATUS` (UUID e3b70003, 20 B, 1 s) | ESP `hr_link.cpp` | 미검증 |
-| ③' 폰 → 조끼 | BLE write `CMD` (UUID e3b70004, `d`/`x` 배기만 허용) | ESP `hr_link.cpp` | 미검증 |
-| ④ 폰 → 보호자 | HTTP 또는 MQTT (미정) | 아동용·보호자 앱, 백엔드 | 미구현 |
+| ③' 폰 → 조끼 | BLE write `CMD` (UUID e3b70004, `d`/`x` 배기만 허용). **앱 SOS = `x`** | ESP `hr_link.cpp` | 미검증 |
+| ④ 폰 ↔ 서버 ↔ 보호자 | **HTTP** (11/23 확정, MQTT 폐기) | 폰 앱 `ServerSync.kt` ↔ 백엔드 `main.py` (`API.md`) | 서버 로컬 시험 통과, 앱 빌드 통과, **EC2 배포·실기 미검증** |
 
 ---
 
@@ -43,7 +44,7 @@
 |---|---|---|
 | 호흡 (전도성 고무) | GPIO4 | GPIO4 ─[센서]─ G (내부 풀업) |
 | 악력 L / R (ZD10-100) | GPIO5 / 6 | 3V3 ─[센서]─ GPIO (내부 풀다운) |
-| 가슴 / 등 압박 (ZD10-100) | GPIO7 / 8 | 3V3 ─[센서]─ GPIO (내부 풀다운) |
+| 가슴 / 등 압박 (ZD10-100) | GPIO7 / 8 | 3V3 ─[센서]─ GPIO (내부 풀다운). 현재 GPIO8 에도 **두 번째 가슴 센서**를 연결 |
 | 펌프 (L298N) | 15 / 16 | IN1 / IN2 → OUT1 / OUT2 |
 | 밸브 (L298N, **NC**) | 17 / 18 | IN3 / IN4 → OUT3 / OUT4 (통전 = 열림) |
 | 비상 정지 | GPIO0 | 보드 BOOT 버튼 |
@@ -174,12 +175,13 @@ adb devices
 | 조끼·가방 배선 조립 | 완료 (11/20) |
 | 펌웨어 v2.2 (센서 5채널 + FSM + 공압) | 커밋됨 |
 | 펌웨어 v2.3 성인 판별 규칙 | PC 모의 시험 T1~T14 통과, **보드 컴파일 미확인** |
-| 펌웨어 v2.4 폰 연동 BLE (STATUS / CMD) | **미컴파일** (문법 검사만 통과) |
+| 펌웨어 v2.4 폰 연동 BLE (STATUS / CMD) | **보드 컴파일·업로드 성공** (11/23, Huge APP, 610 KB). BLE 실기 통신은 미검증 |
+| 가슴 압박 센서 2개 (GPIO7·8, 랜선 경유) | **실측 확인** (11/23): 둘 다 누르면 반응, 떼면 0. 세게 누르면 약 3.1 V 포화. 원인이던 회색 선 빠짐 수정. 보정(`calibrate.py`) 미실시 |
 | PC 비주얼라이저 · 보정 도구 | 동작 확인 (모의 데이터 기준) |
 | 워치 앱 v1 (조끼 직접 BLE) | 워치에서 실행·권한·심박 화면 확인 (11/11) — **폐기 예정** |
-| 워치 앱 v2 (폰 경유) | **워치 빌드·실행 미확인** |
-| 폰 수신 코드 | 예시만 있음, 아동용 앱에 미통합 |
-| 백엔드 (EC2, API :8080) | 동료 담당, `origin/embrace-backend` |
+| 워치 앱 v2 (폰 경유) | `applicationId` → `com.example.embraceapp` 로 변경, **PC 빌드 성공** (11/23). 워치 실행 미확인 |
+| 아동용·보호자 폰 앱 (`embrace-app`) | 워치 수신·조끼 BLE·서버 동기화(HTTP) 통합, **빌드 성공** (11/23). 실기 미검증 |
+| 백엔드 (EC2, API :8080) | API v2 (`origin/embrace-backend` 276f695) 로컬 시험 통과. **EC2 재배포 필요** |
 
 ---
 
@@ -188,11 +190,11 @@ adb devices
 1. **착용 튜닝 (최우선)** — 실측으로 채울 값:
    `GRIP_BASE_MV`(평소 악력, 현재 임시 300), `BREATH_CV_BASE_X100`(평소 호흡 변동계수), `BREATH_HYST_MV`, `BREATH_INVERT`, `EXHALE_HOLD_MS`.
    느린 호흡(8 회/분 이하)에서 X 규칙이 잠깐씩 켜지는 문제 → 평소 `ex=` 최대값을 보고 조정.
-2. v2.3 / v2.4 보드 컴파일과 업로드 (Huge APP 파티션).
-3. 워치 앱 v2 빌드 → 폰 수신 확인 (applicationId·서명 맞추기).
-4. 아동용 폰 앱: WatchReceiver 통합, 조끼 BLE 연결(HR_IN write, STATUS 구독, CMD 배기 버튼).
-5. 폰 → 서버 → 보호자 앱 경로 (HTTP / MQTT 결정 필요).
-6. 팀 논의: 위치를 워치 GPS 로 받을 이유가 있는가 (폰이 BLE 범위 안이면 폰 GPS 로 충분).
+2. ~~v2.3 / v2.4 보드 컴파일과 업로드~~ (11/23 완료).
+3. 워치 앱을 **폰 앱과 같은 PC 에서** debug 빌드·설치 → 폰 홈 심박이 워치 값으로 바뀌는지 확인.
+4. ~~아동용 폰 앱 BLE 통합~~ (코드 완료) → 실기 확인: 기기 관리 → `EMBRACE-VEST` 연결 → "상태 수신 N회" 증가.
+5. 서버: EC2 에서 `git pull && docker compose up -d --build`, 보안그룹 8080 → 폰 앱 `local.properties` 에 주소·키 → 자녀 폰 업로드 / 보호자 폰 표시 확인.
+6. 팀 논의: 위치를 워치 GPS 로 받을 이유가 있는가 (폰이 BLE 범위 안이면 폰 GPS 로 충분). 압박 센서 보정(`calibrate.py`).
 7. 최종 데모용 정량 지표 측정: 판별 Recall / Precision, 전조 → 가압 지연 시간, 가압 정확도.
 
 ---
@@ -213,3 +215,4 @@ adb devices
 | 날짜 | 누가 | 내용 |
 |---|---|---|
 | 2026-11-23 | 신지후 | 문서 처음 작성 (v2.4 · 워치 앱 v2 업로드와 함께) |
+| 2026-11-23 | dann2217 | v2.4 보드 업로드·가슴 센서 2개 실측, 서버 HTTP 확정(API v2), 폰 앱 서버 동기화·SOS `x`·I:E 표시 수정, 워치 applicationId 변경, `ble_protocol.md` 작성 |

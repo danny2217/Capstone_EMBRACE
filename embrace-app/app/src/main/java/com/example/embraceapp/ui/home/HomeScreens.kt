@@ -68,6 +68,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import org.osmdroid.config.Configuration
 import org.osmdroid.tileprovider.tilesource.OnlineTileSourceBase
 import org.osmdroid.util.GeoPoint
@@ -98,6 +99,8 @@ fun HomeScreen(onBell: () -> Unit) {
     var tab by remember { mutableStateOf(0) }            // 선택된 탭 번호
     var sosDialog by remember { mutableStateOf(false) }  // SOS 팝업 표시 여부
     var sosSent by remember { mutableStateOf(false) }    // 배기 명령을 조끼에 실제로 보냈는지
+    var sosRemote by remember { mutableStateOf(false) }  // 보호자 폰에서 서버로 보낸 원격 배기인지
+    val scope = rememberCoroutineScope()
 
     Column(Modifier.fillMaxSize().background(PrimaryCoral)) {
         Row(
@@ -151,7 +154,10 @@ fun HomeScreen(onBell: () -> Unit) {
                     when (t) {
                         0 -> BreathTab()
                         1 -> DeviceTab()
-                        else -> SosTab { sosSent = VestConnection.exhaust(); sosDialog = true } // 조끼로 배기 명령 전송
+                        else -> SosTab {
+                            if (me?.role == "child") { sosRemote = false; sosSent = VestConnection.exhaust(); sosDialog = true } // 자녀 폰: 조끼로 바로 배기 명령
+                            else scope.launch { sosRemote = true; sosSent = ServerSync.requestRemoteExhaust(); sosDialog = true } // 보호자 폰: 서버 경유 원격 배기
+                        }
                     }
                 }
             }
@@ -163,11 +169,15 @@ fun HomeScreen(onBell: () -> Unit) {
         AlertDialog(
             onDismissRequest = { sosDialog = false },
             confirmButton = { TextButton(onClick = { sosDialog = false }) { Text("확인") } },
-            title = { Text(if (sosSent) "비상 배기 명령을 보냈어요" else "명령을 보내지 못했어요") },
+            title = { Text(if (sosSent) (if (sosRemote) "원격 비상 배기를 요청했어요" else "비상 배기 명령을 보냈어요") else "명령을 보내지 못했어요") },
             text = {
                 Text(
-                    if (sosSent) "조끼의 압력을 해제하고 있습니다."
-                    else "조끼와 연결되어 있지 않아요. 조끼의 비상 배기 방법으로 직접 압력을 해제해 주세요."
+                    when {
+                        sosSent && sosRemote -> "자녀 폰이 조끼에 연결되어 있으면 몇 초 안에 조끼로 전달돼요. 1분이 지나도 전달되지 않으면 요청은 취소돼요."
+                        sosSent -> "조끼의 압력을 해제하고 있습니다."
+                        sosRemote -> "서버에 연결하지 못했어요. 자녀 곁에서 조끼의 비상 배기 방법으로 직접 압력을 해제해 주세요."
+                        else -> "조끼와 연결되어 있지 않아요. 조끼의 비상 배기 방법으로 직접 압력을 해제해 주세요."
+                    }
                 )
             }
         )
@@ -313,7 +323,7 @@ fun BreathTab() {
             modifier = Modifier.weight(1f).height(170.dp)
         ) {
             Column(Modifier.fillMaxSize(), Arrangement.Center, Alignment.CenterHorizontally) {
-                Text(sensor.vest?.takeIf { it.breathValid && it.ieRatio > 0f }?.let { String.format("1 : %.1f", it.ieRatio) } ?: "--", fontSize = 48.sp, color = TextCharcoal, maxLines = 1)
+                Text(sensor.vest?.takeIf { it.breathValid && it.ieRatio > 0f }?.let { String.format("1 : %.1f", 1f / it.ieRatio) } ?: "--", fontSize = 48.sp, color = TextCharcoal, maxLines = 1)
                 Spacer(Modifier.height(10.dp))
                 Text("시간당 호흡비", fontSize = 13.sp, color = TextCharcoal)
                 Text("(호기:흡기)", fontSize = 13.sp, color = TextCharcoal)

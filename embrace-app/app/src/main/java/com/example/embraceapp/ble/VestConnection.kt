@@ -44,8 +44,8 @@ object VestConnection {
     private val CMD: UUID = UUID.fromString("e3b70004-5c3a-4f6e-9a1d-2b8f0c4d7e10")     // 명령 쓰기(배기만)
     private val CCCD: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")     // 알림 켜기용 표준 UUID
 
-    // 비상 배기 명령 값. 'd' / 'x' 만 허용된다고 되어 있음 → 어느 쪽이 맞는지 펌웨어 담당과 확인 필요
-    private const val CMD_EXHAUST: Char = 'd'
+    // 비상 배기 명령 값. 조끼는 'd'(배기) / 'x'(비상 배기)만 받음 → SOS 는 'x' 로 확정 (2026-11-23 팀 결정)
+    private const val CMD_EXHAUST: Char = 'x'
 
     const val VEST_NAME = "EMBRACE-VEST" // 조끼 광고 이름
 
@@ -207,7 +207,8 @@ object VestConnection {
             ieRatio = u16(9) / 100f,     // 조끼가 ×100 해서 보냄
             gripL = u16(11), gripR = u16(13), compMaxMv = u16(15),
             inStateSec = u16(17),
-            cycles = u8(19)
+            cycles = u8(19),
+            seq = u8(1)
         )
         SensorRepository.updateVest(status) { title, msg -> appCtx?.let { Notifier.send(it, title, msg) } }
     }

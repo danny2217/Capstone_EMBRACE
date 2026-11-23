@@ -34,12 +34,13 @@ data class VestStatus(
     val hrState: Int,          // 0 없음 1 끊김 2 재합류 3 정상
     val bpm: Int,              // 심박 (쓸 수 없으면 0)
     val breathRate: Float,     // 호흡수 (회/분)
-    val ieRatio: Float,        // 호흡비 (조끼가 계산한 값)
+    val ieRatio: Float,        // 들숨 ÷ 날숨 (조끼 정의). 화면의 "1 : x" 는 x = 1 / ieRatio
     val gripL: Int,
     val gripR: Int,
     val compMaxMv: Int,
     val inStateSec: Int,       // 현재 상태가 이어진 시간 (초)
-    val cycles: Int            // 가압 횟수
+    val cycles: Int,           // 가압 횟수
+    val seq: Int = 0           // STATUS 순번 (바이트 1)
 ) {
     val stateName: String
         get() = when (stateCode) {

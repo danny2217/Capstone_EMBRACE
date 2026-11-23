@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -18,6 +20,16 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // 서버 주소와 API 키는 저장소에 올리지 않고 embrace-app/local.properties 에서 읽는다
+        //   embrace.serverUrl=http://<EC2 공인 IP>:8080
+        //   embrace.apiKey=<서버 .env 의 API_KEY>
+        val local = Properties().apply {
+            val f = rootProject.file("local.properties")
+            if (f.exists()) f.inputStream().use { load(it) }
+        }
+        buildConfigField("String", "SERVER_URL", "\"${local.getProperty("embrace.serverUrl", "")}\"")
+        buildConfigField("String", "API_KEY", "\"${local.getProperty("embrace.apiKey", "")}\"")
     }
 
     buildTypes {
@@ -34,6 +46,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 

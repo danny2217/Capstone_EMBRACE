@@ -29,3 +29,11 @@ watch-app/.kotlin/
 watch-app/local.properties
 *.jks
 *.keystore
+embrace-app/build/
+embrace-app/app/build/
+embrace-app/.gradle/
+embrace-app/.idea/
+embrace-app/.kotlin/
+# 서버 주소·API 키가 들어간다 → 절대 커밋하지 않는다
+embrace-app/local.properties
+embrace-app/app/google-services.json

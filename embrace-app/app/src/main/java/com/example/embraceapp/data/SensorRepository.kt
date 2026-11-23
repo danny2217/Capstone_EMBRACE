@@ -14,7 +14,7 @@ import java.util.Locale
 // ───────── 센서 / 알림 데이터 관리 ─────────
 // 앱 전체에서 하나만 쓰는 데이터 보관소입니다.
 // 화면은 여기 값을 "읽기만" 하고, 값이 바뀌면 화면이 자동으로 다시 그려져요.
-// 나중에 MQTT로 값을 받으면 아래 update~ / addAlert 함수만 호출하면 됩니다.
+// 서버 업로드/조회는 ServerSync.kt 가 이 값들을 읽고 써서 처리합니다 (HTTP, MQTT 아님).
 object SensorRepository {
 
     private val _state = MutableStateFlow(SensorState())
@@ -23,7 +23,7 @@ object SensorRepository {
     private val _alerts = MutableStateFlow<List<AlertItem>>(emptyList()) // 처음엔 비어 있음. 서버에서 알림이 오면 addAlert로 추가
     val alerts: StateFlow<List<AlertItem>> = _alerts.asStateFlow()
 
-    // ── 센서 값 갱신 (MQTT 수신 시 호출) ──
+    // ── 센서 값 갱신 ──
 
     // 생체 정보: 바꿀 값만 넣으면 됨 (예: updateVitals(heartRate = 90))
     fun updateVitals(heartRate: Int? = null, breathRate: Int? = null, vestPressure: Int? = null) {
@@ -39,13 +39,18 @@ object SensorRepository {
     }
 
     // 워치 심박 (WatchReceiver 가 호출)
-    fun updateWatchHr(bpm: Int, valid: Boolean) {
-        _state.update { it.copy(watchHr = WatchHr(bpm, valid, System.currentTimeMillis())) }
+    fun updateWatchHr(bpm: Int, valid: Boolean, receivedAt: Long = System.currentTimeMillis()) {
+        _state.update { it.copy(watchHr = WatchHr(bpm, valid, receivedAt)) }
     }
 
     // 워치 위치 (WatchReceiver 가 호출)
-    fun updateChildLocation(lat: Double, lon: Double, accuracyM: Double?) {
-        _state.update { it.copy(childLocation = ChildLocation(lat, lon, accuracyM, System.currentTimeMillis())) }
+    fun updateChildLocation(lat: Double, lon: Double, accuracyM: Double?, receivedAt: Long = System.currentTimeMillis()) {
+        _state.update { it.copy(childLocation = ChildLocation(lat, lon, accuracyM, receivedAt)) }
+    }
+
+    // 보호자 폰: 서버에서 받은 자녀 조끼 상태 반영 (알림은 서버 알림 목록으로 따로 받으므로 여기서 만들지 않음)
+    fun setVestFromServer(v: VestStatus?) {
+        _state.update { it.copy(vest = v) }
     }
 
     // 조끼 상태 갱신 (조끼 연결에서 1초마다 호출. 끊기면 null).
@@ -78,10 +83,17 @@ object SensorRepository {
     fun addAlert(level: AlertLevel, title: String, message: String, location: String? = null) {
         val now = SimpleDateFormat("HH:mm - M월 d일", Locale.KOREA).format(Date())
         val item = AlertItem(
-            id = System.currentTimeMillis(), level = level, title = title, message = message,
+            id = nextAlertId(), level = level, title = title, message = message,
             time = now, day = "오늘", location = location, read = false
         )
         _alerts.update { listOf(item) + it }
+    }
+
+    // 알림 id: 같은 밀리초에 여러 개가 생겨도 겹치지 않게 (서버 업로드 때 중복 판단에도 씀)
+    private var lastAlertId = 0L
+    @Synchronized private fun nextAlertId(): Long {
+        lastAlertId = maxOf(System.currentTimeMillis(), lastAlertId + 1)
+        return lastAlertId
     }
 
     // 알림 화면을 열면 전부 읽음 처리 (벨의 숫자 사라짐)

@@ -10,7 +10,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.embrace.watchhr"
+        applicationId = "com.example.embraceapp" // 폰 앱과 같아야 Data Layer 메시지가 전달됨 (namespace 는 그대로)
         minSdk = 34
         targetSdk = 37
         versionCode = 1
