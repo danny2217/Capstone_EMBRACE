@@ -161,6 +161,7 @@ fun PinkPage(
     bottomContent: (@Composable ColumnScope.() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
+    // imePadding: 키보드가 올라오면 그만큼 화면을 줄여서 입력칸이 가려지지 않게 함
     Column(Modifier.fillMaxSize().background(PrimaryCoral).imePadding()) {
         // 헤더 (뒤로가기, 제목, 벨)
         Box(
@@ -209,7 +210,8 @@ fun PinkPage(
 @Composable
 fun SoftField(
     label: String, placeholder: String, password: Boolean = false,
-    value: String? = null, onChange: ((String) -> Unit)? = null // 입력값을 밖에서 관리하고 싶을 때만 사용
+    value: String? = null, onChange: ((String) -> Unit)? = null, // 입력값을 밖에서 관리하고 싶을 때만 사용
+    readOnly: Boolean = false // true면 보기만 되고 고칠 수 없음
 ) {
     var inner by remember { mutableStateOf("") }   // 입력한 글자 (밖에서 안 넘겨줄 때 사용)
     val text = value ?: inner
@@ -218,7 +220,7 @@ fun SoftField(
     Column(Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
         Text(label, fontSize = 12.sp, color = TextCharcoal, modifier = Modifier.padding(bottom = 6.dp, start = 4.dp))
         TextField(
-            value = text, onValueChange = { v -> if (onChange != null) onChange(v) else inner = v }, singleLine = true,
+            value = text, onValueChange = { v -> if (onChange != null) onChange(v) else inner = v }, singleLine = true, readOnly = readOnly,
             placeholder = { Text(placeholder, fontSize = 13.sp, color = Color.Gray) },
             visualTransformation = if (password && !show) PasswordVisualTransformation() else VisualTransformation.None,
             trailingIcon = {
