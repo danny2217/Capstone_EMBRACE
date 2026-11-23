@@ -19,3 +19,13 @@ build/
 **/data/*.json
 **/data/*.txt
 !**/data/DEMO_*
+
+# Android
+watch-app/build/
+watch-app/app/build/
+watch-app/.gradle/
+watch-app/.idea/
+watch-app/.kotlin/
+watch-app/local.properties
+*.jks
+*.keystore
