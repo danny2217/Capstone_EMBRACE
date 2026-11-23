@@ -162,14 +162,15 @@ fun ProfileScreen(nav: Nav) {
     }
 }
 
-// 프로필 수정 화면
+// 프로필 수정 화면 (이름, 전화번호는 수정 가능. 이메일은 로그인 계정이라 보기만 가능)
 @Composable
 fun EditProfileScreen(nav: Nav) {
     val me by AuthRepository.profile.collectAsState() // 로그인한 사람 정보
     // 입력칸 기본값은 지금 저장된 내 정보
     var name by remember(me) { mutableStateOf(me?.name ?: "") }
     var phone by remember(me) { mutableStateOf(me?.phone ?: "") }
-    var email by remember(me) { mutableStateOf(me?.email ?: "") }
+    var error by remember { mutableStateOf<String?>(null) }
+    var loading by remember { mutableStateOf(false) }
     PinkPage("프로필 수정", onBack = { nav.back() }, onBell = { nav.go(Screen.Notifications) }) {
         Box(Modifier.size(84.dp).shadow(6.dp, RoundedCornerShape(22.dp)).clip(RoundedCornerShape(22.dp)).background(BgPeach), contentAlignment = Alignment.Center) {
             Icon(Icons.Default.Person, null, Modifier.size(52.dp), tint = IconGray)
@@ -181,10 +182,17 @@ fun EditProfileScreen(nav: Nav) {
         Text("계정 설정", Modifier.fillMaxWidth().padding(bottom = 12.dp), fontWeight = FontWeight.Bold, fontSize = 16.sp)
         SoftField("사용자 이름", "이름을 입력해 주세요", value = name, onChange = { name = it })
         SoftField("전화번호", "전화번호를 입력해 주세요", value = phone, onChange = { phone = it })
-        SoftField("이메일 주소", "이메일을 입력해 주세요", value = email, onChange = { email = it })
+        SoftField("이메일 주소 (변경할 수 없어요)", "", value = me?.email ?: "", readOnly = true)
+        error?.let { Text(it, color = SosRed, fontSize = 12.sp, modifier = Modifier.padding(bottom = 8.dp)) }
         Spacer(Modifier.height(24.dp))
-        // 세 칸이 모두 채워져 있어야 넘어감
-        PillButton("프로필 수정", enabled = name.isNotBlank() && phone.isNotBlank() && email.isNotBlank()) { nav.go(Screen.EditDone) }
+        // 이름과 전화번호가 채워져 있어야 저장됨
+        PillButton(if (loading) "저장 중..." else "프로필 수정", enabled = !loading && me != null && name.isNotBlank() && phone.isNotBlank()) {
+            loading = true; error = null
+            AuthRepository.updateProfile(name, phone) { err ->
+                loading = false
+                if (err == null) nav.go(Screen.EditDone) else error = err
+            }
+        }
     }
 }
 
@@ -197,19 +205,28 @@ fun ChangePwScreen(nav: Nav) {
 }
 
 // 비밀번호 변경 입력칸 + 버튼 (비밀번호 변경 / 비밀번호 설정 화면에서 같이 사용)
-// 현재 비밀번호를 입력하고, 새 비밀번호가 6자 이상이며 두 칸이 같아야 버튼이 눌림
+// 현재 비밀번호를 입력하고, 새 비밀번호가 6자 이상이며 두 칸이 같아야 버튼이 눌림. 현재 비밀번호가 틀리면 변경되지 않음
 @Composable
 fun PasswordChangeForm(onDone: () -> Unit) {
     var cur by remember { mutableStateOf("") }
     var n1 by remember { mutableStateOf("") }
     var n2 by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+    var loading by remember { mutableStateOf(false) }
     SoftField("현재 비밀번호", "현재 비밀번호", password = true, value = cur, onChange = { cur = it })
     SoftField("새 비밀번호", "새 비밀번호", password = true, value = n1, onChange = { n1 = it })
     SoftField("새 비밀번호 확인", "새 비밀번호 확인", password = true, value = n2, onChange = { n2 = it })
     if (n1.isNotEmpty() && n1.length < 6) Text("비밀번호는 6자 이상으로 해주세요.", color = SosRed, fontSize = 12.sp)
     else if (n2.isNotEmpty() && n1 != n2) Text("비밀번호가 일치하지 않아요.", color = SosRed, fontSize = 12.sp)
+    error?.let { Text(it, color = SosRed, fontSize = 12.sp) }
     Spacer(Modifier.height(24.dp))
-    PillButton("비밀번호 변경", enabled = cur.isNotBlank() && n1.length >= 6 && n1 == n2) { onDone() }
+    PillButton(if (loading) "변경 중..." else "비밀번호 변경", enabled = !loading && cur.isNotBlank() && n1.length >= 6 && n1 == n2) {
+        loading = true; error = null
+        AuthRepository.changePassword(cur, n1) { err ->
+            loading = false
+            if (err == null) onDone() else error = err
+        }
+    }
 }
 
 // 설정 화면 (알림 설정, 비밀번호 설정, 계정 삭제, 다크 테마)
@@ -248,6 +265,8 @@ fun PwSettingsScreen(nav: Nav) {
 fun DeleteAccountScreen(nav: Nav) {
     var dialog by remember { mutableStateOf(false) } // 확인 팝업 표시 여부
     var pw by remember { mutableStateOf("") }         // 입력한 비밀번호
+    var error by remember { mutableStateOf<String?>(null) }
+    var loading by remember { mutableStateOf(false) }
     PinkPage("계정 삭제", onBack = { nav.back() }, onBell = { nav.go(Screen.Notifications) }) {
         Text("정말로 계정을 삭제하시겠습니까?", fontWeight = FontWeight.Bold, fontSize = 14.sp)
         Spacer(Modifier.height(16.dp))
@@ -263,21 +282,28 @@ fun DeleteAccountScreen(nav: Nav) {
         Text("계정 삭제를 하시려면 비밀번호를 입력해 주세요.", fontSize = 12.sp)
         Spacer(Modifier.height(10.dp))
         SoftField("비밀번호", "비밀번호 입력", password = true, value = pw, onChange = { pw = it })
+        error?.let { Text(it, color = SosRed, fontSize = 12.sp, modifier = Modifier.padding(bottom = 8.dp)) }
         Spacer(Modifier.height(8.dp))
         // 비밀번호를 입력해야 눌림
-        PillButton("계정 삭제", enabled = pw.isNotBlank()) { dialog = true }
+        PillButton(if (loading) "삭제 중..." else "계정 삭제", enabled = !loading && pw.isNotBlank()) { dialog = true }
         Spacer(Modifier.height(10.dp))
         PillButton("취 소", color = InactiveGray) { nav.back() }
     }
 
-    // 계정 삭제 확인 팝업
+    // 계정 삭제 확인 팝업 (확인을 누르면 비밀번호를 확인하고 실제로 삭제)
     if (dialog) {
         ConfirmDialog(
             title = "계정 삭제",
             question = "정말로 삭제하시겠습니까?",
             body = "계정을 삭제함으로써, 귀하는 이러한 조치로 인한 결과를 이해하고 있으며, 계정 및 그와 관련된 모든 데이터를 영구적으로 삭제하는 데 동의하는 것으로 간주됩니다.",
             confirmText = "계정 삭제",
-            onConfirm = { dialog = false; nav.root(Screen.AuthLaunch) },
+            onConfirm = {
+                dialog = false; loading = true; error = null
+                AuthRepository.deleteAccount(pw) { err ->
+                    loading = false
+                    if (err == null) nav.root(Screen.AuthLaunch) else error = err
+                }
+            },
             onCancel = { dialog = false }
         )
     }
