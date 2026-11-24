@@ -10,7 +10,7 @@ import org.json.JSONObject
 /**
  * 워치 → 아동용 폰 앱 전송 (Wear OS Data Layer, MessageClient).
  *
- *   [워치] HrService ──심박·위치──▶ PhoneLink ──블루투스(Data Layer)──▶ [폰] 아동용 앱
+ *   [워치] HrService ──심박──▶ PhoneLink     ──블루투스(Data Layer)──▶ [폰] 아동용 앱
  *                                                                         └─▶ 조끼 ESP (BLE, 폰 앱 담당)
  *
  * 왜 BLE GATT 를 직접 안 쓰고 Data Layer 인가:
@@ -24,7 +24,7 @@ import org.json.JSONObject
  *
  * 형식: UTF-8 JSON 한 개 = 메시지 한 개. 자세한 표는 docs/ble_protocol.md 1절.
  *   /embrace/hr   {"type":"hr","v":1,"bpm":72,"valid":true,"seq":12,"ts":1732240000000}
- *   /embrace/loc  {"type":"loc","v":1,"lat":37.50,"lon":126.95,"acc_m":8.0,"ts":1732240000000}
+ *   (/embrace/loc 위치는 v2.1(11/24)에서 삭제 — 아동용 폰이 자기 GPS 로 직접 잡는다)
  *
  * 모든 상태 변경은 메인 스레드에서만 한다. Google Play services 의 Task 리스너는
  * 실행기를 지정하지 않으면 메인 스레드에서 불리므로 락이 필요 없다.
@@ -33,11 +33,11 @@ class PhoneLink(ctx: Context) {
 
     companion object {
         const val PATH_HR = "/embrace/hr"
-        const val PATH_LOC = "/embrace/loc"
         private const val NODE_REFRESH_MS = 30_000L   // 폰 목록 다시 확인 주기
     }
 
     private val main = Handler(Looper.getMainLooper())
+    private val battery = ctx.getSystemService(android.os.BatteryManager::class.java)
     private val nodeClient = Wearable.getNodeClient(ctx)
     private val msgClient = Wearable.getMessageClient(ctx)
 
@@ -65,17 +65,11 @@ class PhoneLink(ctx: Context) {
             .put("bpm", bpm).put("valid", valid)
             .put("seq", hrSeq and 0xFF)
             .put("ts", System.currentTimeMillis())
+        // v2.2: 워치 배터리 % (폰 기기 관리 탭 표시용, 폰이 모르면 무시)
+        battery?.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY)
+            ?.takeIf { it in 0..100 }?.let { json.put("batt", it) }
         hrSeq++
         send(PATH_HR, json)
-    }
-
-    fun sendLocation(lat: Double, lon: Double, accuracyM: Double?) = main.post {
-        val json = JSONObject()
-            .put("type", "loc").put("v", 1)
-            .put("lat", lat).put("lon", lon)
-            .put("ts", System.currentTimeMillis())
-        if (accuracyM != null && !accuracyM.isNaN()) json.put("acc_m", accuracyM)
-        send(PATH_LOC, json)
     }
 
     // ------------------------------------------------------------------ 내부

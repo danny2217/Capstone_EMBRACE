@@ -52,6 +52,7 @@ android {
 
 dependencies {
     implementation("com.google.android.gms:play-services-wearable:19.0.0")
+    implementation("com.google.android.gms:play-services-location:21.3.0") // 아동 폰 GPS (ChildLocationTracker)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.material3)

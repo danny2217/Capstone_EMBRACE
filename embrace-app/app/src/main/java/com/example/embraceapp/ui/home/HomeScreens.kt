@@ -81,6 +81,7 @@ import com.example.embraceapp.R
 import com.example.embraceapp.data.*
 import com.example.embraceapp.model.*
 import com.example.embraceapp.ble.*
+import com.example.embraceapp.wear.WatchLink
 import com.example.embraceapp.util.*
 import com.example.embraceapp.ui.*
 import com.example.embraceapp.ui.theme.*
@@ -332,11 +333,17 @@ fun BreathTab() {
     }
 }
 
-// [기기 관리] 탭: 기기 검색 바 + 연결된 기기 목록 + 자동 재연결
+// [기기 관리] 탭
+//  · 자녀 폰: 조끼(EMBRACE-VEST)를 BLE 로 찾아 연결. 워치는 BLE 로 연결하지 않는다
+//            (Galaxy Wearable 페어링 + 워치 앱 [시작] → Data Layer 로 심박이 자동으로 들어옴)
+//  · 보호자 폰: 조끼·워치에 직접 붙지 않는다. 서버에 올라온 자녀 쪽 상태만 보여 줌
 @Composable
 fun DeviceTab() {
+    val me by AuthRepository.profile.collectAsState()
+    val isChild = me?.role == "child"
     val sensor by SensorRepository.state.collectAsState()
     val ctx = androidx.compose.ui.platform.LocalContext.current
+    val now by produceState(System.currentTimeMillis()) { while (true) { delay(1000); value = System.currentTimeMillis() } }
     // 블루투스 권한 (안드로이드 12 이상: 주변 기기 검색/연결, 11 이하: 위치)
     val btPerms = if (Build.VERSION.SDK_INT >= 31)
         listOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
@@ -344,7 +351,7 @@ fun DeviceTab() {
     val requestBt = rememberPermissionRequester(
         permissions = btPerms,
         title = "블루투스 권한",
-        message = "조끼와 워치를 찾고 연결하려면 주변 기기 권한이 필요해요."
+        message = "조끼를 찾고 연결하려면 주변 기기 권한이 필요해요."
     ) { ok ->
         // 권한이 허용되면 기기 검색 시작. 블루투스가 꺼져 있으면 안내
         if (ok && !BleScanner.start(ctx))
@@ -356,72 +363,128 @@ fun DeviceTab() {
     val connAddress by VestConnection.address.collectAsState() // 연결 중/연결된 조끼 주소
     val vestMsg by VestConnection.message.collectAsState()     // 연결 실패 등 안내 문구
     val statusCount by VestConnection.statusCount.collectAsState() // 조끼 상태 수신 횟수
+    val watchNode by WatchLink.nodeName.collectAsState()   // 폰과 연결된 워치 이름
+    val watchChecked by WatchLink.checked.collectAsState()
     var scanned by remember { mutableStateOf(false) }    // 한 번이라도 검색했는지
-    // 기기 검색 바
-    Surface(
-        shape = RoundedCornerShape(30.dp), color = BgPeach, shadowElevation = 6.dp,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Row(Modifier.padding(horizontal = 20.dp, vertical = 18.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(painterResource(R.drawable.ic_bluetooth), null, tint = IconGray, modifier = Modifier.size(26.dp))
-            Spacer(Modifier.width(12.dp))
-            Text("검색된 기기 목록", Modifier.weight(1f), fontSize = 14.sp, color = TextCharcoal)
-            // 다시 스캔 버튼: 검색 중에는 빙글빙글 돌고 눌리지 않음
-            Row(
-                Modifier.clip(RoundedCornerShape(12.dp)).clickable(enabled = !scanning) { scanned = true; requestBt() }.padding(6.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                if (scanning) {
-                    CircularProgressIndicator(Modifier.size(18.dp), color = AccentBlue, strokeWidth = 2.dp)
-                } else {
-                    Icon(painterResource(R.drawable.ic_refresh), null, tint = Color.Unspecified, modifier = Modifier.size(20.dp))
+    // 자녀 폰: 워치 연결 여부를 10초마다 확인
+    LaunchedEffect(isChild) { while (isChild) { WatchLink.refresh(ctx); delay(10_000) } }
+
+    if (isChild) {
+        // 조끼 검색 바
+        Surface(
+            shape = RoundedCornerShape(30.dp), color = BgPeach, shadowElevation = 6.dp,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(Modifier.padding(horizontal = 20.dp, vertical = 18.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(painterResource(R.drawable.ic_bluetooth), null, tint = IconGray, modifier = Modifier.size(26.dp))
+                Spacer(Modifier.width(12.dp))
+                Text("조끼 찾기", Modifier.weight(1f), fontSize = 14.sp, color = TextCharcoal)
+                // 다시 스캔 버튼: 검색 중에는 빙글빙글 돌고 눌리지 않음
+                Row(
+                    Modifier.clip(RoundedCornerShape(12.dp)).clickable(enabled = !scanning) { scanned = true; requestBt() }.padding(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (scanning) {
+                        CircularProgressIndicator(Modifier.size(18.dp), color = AccentBlue, strokeWidth = 2.dp)
+                    } else {
+                        Icon(painterResource(R.drawable.ic_refresh), null, tint = Color.Unspecified, modifier = Modifier.size(20.dp))
+                    }
+                    Spacer(Modifier.width(4.dp))
+                    Text(if (scanning) "스캔 중..." else "다시 스캔", fontSize = 14.sp, color = TextCharcoal)
                 }
-                Spacer(Modifier.width(4.dp))
-                Text(if (scanning) "스캔 중..." else "다시 스캔", fontSize = 14.sp, color = TextCharcoal)
             }
         }
-    }
-    // 검색된 기기 목록 (신호가 센 순서)
-    if (scanned || found.isNotEmpty()) {
-        Spacer(Modifier.height(14.dp))
-        if (found.isEmpty()) {
-            Text(
-                if (scanning) "주변 기기를 찾는 중이에요..." else "검색된 기기가 없어요. 블루투스가 켜져 있는지 확인해 주세요.",
-                fontSize = 12.sp, color = TextCharcoal, modifier = Modifier.padding(horizontal = 8.dp)
-            )
+        // 검색 결과: 조끼만 연결 버튼을 보여 준다 (워치·에어컨 등 다른 BLE 기기는 조끼가 아니라 연결하면 실패함)
+        val vests = found.filter { it.isVest }.sortedByDescending { it.signal }
+        val others = found.size - vests.size
+        if (scanned || found.isNotEmpty()) {
+            Spacer(Modifier.height(14.dp))
+            if (vests.isEmpty()) {
+                Text(
+                    if (scanning) "조끼(${VestConnection.VEST_NAME})를 찾는 중이에요..."
+                    else "조끼(${VestConnection.VEST_NAME})가 보이지 않아요. 조끼 전원이 켜져 있는지, 다른 폰이 이미 조끼에 연결돼 있지 않은지 확인해 주세요.",
+                    fontSize = 12.sp, color = TextCharcoal, modifier = Modifier.padding(horizontal = 8.dp)
+                )
+            }
+            vests.forEach { d ->
+                FoundDeviceRow(d.name, d.address, d.signal, link, connAddress)
+                Spacer(Modifier.height(10.dp))
+            }
+            if (others > 0) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "조끼가 아닌 블루투스 기기 ${others}개는 숨겼어요. 워치는 여기서 연결하지 않아요 (아래 워치 항목 참고).",
+                    fontSize = 11.sp, color = IconGray, modifier = Modifier.padding(horizontal = 8.dp)
+                )
+            }
         }
-        // 조끼(EMBRACE-VEST)를 맨 위에, 나머지는 신호가 센 순서
-        found.sortedWith(compareByDescending<FoundDevice> { it.name == VestConnection.VEST_NAME }.thenByDescending { it.signal }).forEach { d ->
-            FoundDeviceRow(d.name, d.address, d.signal, link, connAddress)
-            Spacer(Modifier.height(10.dp))
+        // 연결 안내 (실패 이유 / 상태 수신 확인)
+        vestMsg?.let {
+            Spacer(Modifier.height(8.dp))
+            Text(it, fontSize = 12.sp, color = SosRed, modifier = Modifier.padding(horizontal = 8.dp))
         }
+        Spacer(Modifier.height(22.dp))
     }
-    // 연결 안내 (실패 이유 / 상태 수신 확인)
-    if (link == VestLink.Connected) {
-        Spacer(Modifier.height(8.dp))
-        Text("조끼 연결됨 · 상태 수신 ${statusCount}회", fontSize = 12.sp, color = GreenOk, modifier = Modifier.padding(horizontal = 8.dp))
+
+    // ── 워치 / 조끼 상태 카드 (실제 값) ──
+    val w = sensor.watchHr
+    val hrFresh = w != null && now - w.receivedAt < 15_000 // 15초 안에 심박이 왔으면 "수신 중"
+    val hrAgo = w?.let { ((now - it.receivedAt) / 1000).coerceAtLeast(0) }
+    val watchStatus = when {
+        hrFresh && w!!.valid -> "심박 수신 중 · ${w.bpm} BPM"
+        hrFresh -> "워치 앱 연결됨 · 심박 측정 중..."
+        !isChild -> if (w == null) "자녀 워치 심박이 아직 없어요" else "최근 심박 ${hrAgo}초 전 · 자녀 폰 확인 필요"
+        watchNode == null && watchChecked -> "연결 안 됨 · Galaxy Wearable 앱에서 워치를 폰에 연결해 주세요"
+        watchNode == null -> "워치 확인 중..."
+        w == null -> "워치 연결됨 · 워치 앱(EMBRACE)에서 [시작]을 눌러 주세요"
+        else -> "워치 연결됨 · 심박이 ${hrAgo}초째 안 와요. 워치 앱을 확인해 주세요"
     }
-    vestMsg?.let {
-        Spacer(Modifier.height(8.dp))
-        Text(it, fontSize = 12.sp, color = SosRed, modifier = Modifier.padding(horizontal = 8.dp))
+    DeviceRow(
+        iconRes = R.drawable.ic_watch,
+        name = if (isChild) (watchNode ?: "Galaxy Watch") else "자녀 워치",
+        status = watchStatus,
+        ok = hrFresh,
+        battery = w?.battery?.takeIf { hrFresh }?.let { "$it%" },
+        buttonText = if (isChild) "새로고침" else null,
+        onButton = { WatchLink.refresh(ctx) }
+    )
+    Spacer(Modifier.height(14.dp))
+    val vest = sensor.vest
+    val vestStatus = if (isChild) when (link) {
+        VestLink.Connected -> "연결됨 · ${vest?.stateName ?: "상태 대기"} · 수신 ${statusCount}회"
+        VestLink.Connecting -> "연결 중..."
+        VestLink.Disconnected -> "연결 안 됨 · 위 [다시 스캔]으로 조끼를 찾아 주세요"
+    } else {
+        if (vest != null) "자녀 폰과 연결됨 · ${vest.stateName}" else "최근 조끼 상태가 없어요 (자녀 폰·조끼 확인)"
     }
-    Spacer(Modifier.height(22.dp))
-    // 연결된 기기 (지금은 예시)
-    sensor.devices.forEachIndexed { i, d ->
-        if (i > 0) Spacer(Modifier.height(14.dp))
-        DeviceRow(d.iconRes, d.name, "${d.battery}%")
-    }
-    Spacer(Modifier.height(24.dp))
-    // 자동 재연결 스위치
-    Surface(
-        shape = RoundedCornerShape(28.dp), color = BgPeach, shadowElevation = 6.dp,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Row(Modifier.padding(horizontal = 20.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("자동 재연결 활성화", Modifier.weight(1f), fontSize = 14.sp, color = TextCharcoal)
-            var on by remember { mutableStateOf(true) }
-            Switch(on, { on = it }, colors = SwitchDefaults.colors(checkedTrackColor = AccentBlue, checkedThumbColor = Color.White))
+    DeviceRow(
+        iconRes = R.drawable.ic_vest,
+        name = VestConnection.VEST_NAME,
+        status = vestStatus,
+        ok = if (isChild) link == VestLink.Connected else vest != null,
+        battery = null, // 조끼 펌웨어가 배터리 값을 보내지 않음
+        buttonText = if (isChild && link != VestLink.Disconnected) "연결 해제" else null,
+        onButton = { VestConnection.disconnect() }
+    )
+    if (isChild) {
+        Spacer(Modifier.height(24.dp))
+        // 자동 재연결 스위치
+        Surface(
+            shape = RoundedCornerShape(28.dp), color = BgPeach, shadowElevation = 6.dp,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(Modifier.padding(horizontal = 20.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("자동 재연결 활성화", Modifier.weight(1f), fontSize = 14.sp, color = TextCharcoal)
+                var on by remember { mutableStateOf(true) }
+                Switch(on, { on = it }, colors = SwitchDefaults.colors(checkedTrackColor = AccentBlue, checkedThumbColor = Color.White))
+            }
         }
+    } else {
+        Spacer(Modifier.height(16.dp))
+        Text(
+            "보호자 폰은 조끼·워치에 직접 연결하지 않아요. 자녀 폰(자녀 계정으로 로그인)이 조끼와 워치를 연결하고 서버로 올린 값을 여기서 봐요.",
+            fontSize = 11.sp, color = IconGray, modifier = Modifier.padding(horizontal = 8.dp)
+        )
     }
 }
 

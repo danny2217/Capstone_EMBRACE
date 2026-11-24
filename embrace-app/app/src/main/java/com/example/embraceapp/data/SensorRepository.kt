@@ -39,11 +39,11 @@ object SensorRepository {
     }
 
     // 워치 심박 (WatchReceiver 가 호출)
-    fun updateWatchHr(bpm: Int, valid: Boolean, receivedAt: Long = System.currentTimeMillis()) {
-        _state.update { it.copy(watchHr = WatchHr(bpm, valid, receivedAt)) }
+    fun updateWatchHr(bpm: Int, valid: Boolean, receivedAt: Long = System.currentTimeMillis(), battery: Int? = null) {
+        _state.update { it.copy(watchHr = WatchHr(bpm, valid, receivedAt, battery ?: it.watchHr?.battery)) }
     }
 
-    // 워치 위치 (WatchReceiver 가 호출)
+    // 자녀 위치: 자녀 폰은 ChildLocationTracker(폰 GPS), 보호자 폰은 ServerSync(서버 값)가 호출
     fun updateChildLocation(lat: Double, lon: Double, accuracyM: Double?, receivedAt: Long = System.currentTimeMillis()) {
         _state.update { it.copy(childLocation = ChildLocation(lat, lon, accuracyM, receivedAt)) }
     }
@@ -70,11 +70,6 @@ object SensorRepository {
     // 호흡 그래프 점 목록과 호기:흡기 비율
     fun updateBreath(series: List<Float>, ieRatio: Float) {
         _state.update { it.copy(breathSeries = series, ieRatio = ieRatio) }
-    }
-
-    // 연결된 기기 목록 (배터리 포함)
-    fun updateDevices(devices: List<DeviceInfo>) {
-        _state.update { it.copy(devices = devices) }
     }
 
     // ── 알림 ──

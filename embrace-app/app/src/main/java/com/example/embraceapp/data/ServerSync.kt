@@ -3,6 +3,7 @@ package com.example.embraceapp.data
 import android.content.Context
 import com.example.embraceapp.ble.VestConnection
 import com.example.embraceapp.ble.VestLink
+import com.example.embraceapp.location.ChildLocationTracker
 import com.example.embraceapp.model.AlertItem
 import com.example.embraceapp.model.AlertLevel
 import com.example.embraceapp.model.UserProfile
@@ -18,7 +19,7 @@ import kotlinx.coroutines.withContext
 
 // ───────── 서버 동기화 (HTTP) ─────────
 // 로그인한 사람의 역할(role)에 따라 둘 중 하나만 돈다.
-//  · 자녀(child) 폰 : 조끼 상태·심박·위치·알림을 서버로 올리고, 보호자의 원격 배기 명령을 받아 조끼로 전달
+//  · 자녀(child) 폰 : 조끼 상태·워치 심박·폰 GPS 위치·알림을 서버로 올리고, 보호자의 원격 배기 명령을 받아 조끼로 전달
 //  · 보호자(guardian) 폰 : 서버에서 자녀의 최신 값과 새 알림을 받아 화면에 반영
 //
 // 자녀 구분 키(child_id) = 자녀 전화번호의 숫자만 (예: "01012345678").
@@ -81,7 +82,8 @@ object ServerSync {
                 if (ServerApi.postHeart(childId, hr.bpm, hr.valid, "watch", hr.receivedAt)) lastHrAt = hr.receivedAt
             }
 
-            // 위치
+            // 위치 (아동 폰 자신의 GPS — ChildLocationTracker). 권한을 나중에 허용했으면 여기서 켜진다
+            appCtx?.let { ChildLocationTracker.ensureStarted(it) }
             val loc = s.childLocation
             if (loc != null && loc.receivedAt > lastLocAt) {
                 if (ServerApi.postLocation(childId, loc.lat, loc.lon, loc.accuracyM, loc.receivedAt)) lastLocAt = loc.receivedAt

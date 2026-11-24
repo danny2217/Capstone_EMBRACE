@@ -402,7 +402,15 @@ fun ConfirmDialog(
 
 // 기기 한 줄 (아이콘 + 이름 + 배터리 + 연결 해제 버튼)
 @Composable
-fun DeviceRow(iconRes: Int, name: String, battery: String) {
+fun DeviceRow(
+    iconRes: Int,
+    name: String,
+    status: String,              // 연결 상태 한 줄 (예: "심박 수신 중 · 72 BPM")
+    ok: Boolean,                 // 정상이면 초록, 아니면 회색 글씨
+    battery: String?,            // 배터리 % (모르면 null → 표시 안 함)
+    buttonText: String?,         // 버튼 글자 (null 이면 버튼 없음)
+    onButton: () -> Unit = {}
+) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Box(
             Modifier.size(50.dp).shadow(6.dp, RoundedCornerShape(18.dp)).clip(RoundedCornerShape(18.dp)).background(BgPeach),
@@ -411,22 +419,29 @@ fun DeviceRow(iconRes: Int, name: String, battery: String) {
             Icon(painterResource(iconRes), null, tint = Color.Unspecified, modifier = Modifier.size(28.dp))
         }
         Spacer(Modifier.width(8.dp))
-        Text(name, Modifier.weight(1f), fontSize = 13.sp, fontWeight = FontWeight.Medium, color = TextCharcoal, maxLines = 1)
-        Spacer(Modifier.width(8.dp))
-        Box(Modifier.width(1.5.dp).height(40.dp).background(PrimaryCoral)) // 세로 구분선
-        Spacer(Modifier.width(8.dp))
-        Icon(painterResource(R.drawable.ic_battery), null, tint = Color.Unspecified, modifier = Modifier.size(20.dp))
-        Spacer(Modifier.width(4.dp))
-        Text(battery, fontSize = 14.sp, color = LinkBlue, fontWeight = FontWeight.Medium)
-        Spacer(Modifier.width(8.dp))
-        Box(Modifier.width(1.5.dp).height(40.dp).background(PrimaryCoral)) // 세로 구분선
-        Spacer(Modifier.width(8.dp))
-        Button(
-            onClick = { },
-            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = PrimaryCoral, contentColor = TextCharcoal),
-            elevation = ButtonDefaults.buttonElevation(defaultElevation = 6.dp),
-            modifier = Modifier.height(32.dp)
-        ) { Text("연결 해제", fontSize = 11.sp, maxLines = 1) }
+        Column(Modifier.weight(1f)) {
+            Text(name, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = TextCharcoal, maxLines = 1)
+            Text(status, fontSize = 11.sp, color = if (ok) GreenOk else IconGray, maxLines = 2)
+        }
+        if (battery != null) {
+            Spacer(Modifier.width(8.dp))
+            Box(Modifier.width(1.5.dp).height(40.dp).background(PrimaryCoral)) // 세로 구분선
+            Spacer(Modifier.width(8.dp))
+            Icon(painterResource(R.drawable.ic_battery), null, tint = Color.Unspecified, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(4.dp))
+            Text(battery, fontSize = 14.sp, color = LinkBlue, fontWeight = FontWeight.Medium)
+        }
+        if (buttonText != null) {
+            Spacer(Modifier.width(8.dp))
+            Box(Modifier.width(1.5.dp).height(40.dp).background(PrimaryCoral)) // 세로 구분선
+            Spacer(Modifier.width(8.dp))
+            Button(
+                onClick = onButton,
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = PrimaryCoral, contentColor = TextCharcoal),
+                elevation = ButtonDefaults.buttonElevation(defaultElevation = 6.dp),
+                modifier = Modifier.height(32.dp)
+            ) { Text(buttonText, fontSize = 11.sp, maxLines = 1) }
+        }
     }
 }

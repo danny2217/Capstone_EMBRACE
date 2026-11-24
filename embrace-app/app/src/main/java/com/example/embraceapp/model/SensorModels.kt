@@ -12,13 +12,6 @@ data class VitalSigns(
     val vestPressure: Int = 25  // 조끼 압력 (mmHg)
 )
 
-// 연결된 기기 한 개 (기기 관리 탭)
-data class DeviceInfo(
-    val name: String,    // 기기 이름
-    val battery: Int,    // 배터리 잔량 (%)
-    val iconRes: Int     // 아이콘 이미지
-)
-
 // 조끼가 1초마다 보내는 상태 (STATUS 20바이트를 풀어 놓은 것. 규격: firmware hr_link.cpp)
 data class VestStatus(
     val stateCode: Int,        // 0 시작배기 1 대기 2 가압 3 유지 4 배기 5 휴식 6 비상배기 7 잠금
@@ -51,7 +44,8 @@ data class VestStatus(
 }
 
 // 워치가 보낸 심박 (받은 시각을 같이 저장해서, 오래 안 오면 "끊김"으로 처리)
-data class WatchHr(val bpm: Int, val valid: Boolean, val receivedAt: Long)
+// battery: 워치 배터리 % (워치 앱 v2.2 부터 보냄, 모르면 null)
+data class WatchHr(val bpm: Int, val valid: Boolean, val receivedAt: Long, val battery: Int? = null)
 
 // 워치가 보낸 자녀 위치
 data class ChildLocation(val lat: Double, val lon: Double, val accuracyM: Double?, val receivedAt: Long)
@@ -61,14 +55,11 @@ data class SensorState(
     val vitals: VitalSigns = VitalSigns(),
     val vest: VestStatus? = null, // 조끼에서 받은 실제 상태 (연결 전/끊기면 null)
     val watchHr: WatchHr? = null, // 워치에서 받은 마지막 심박
-    val childLocation: ChildLocation? = null, // 워치에서 받은 마지막 위치
+    val childLocation: ChildLocation? = null, // 자녀 마지막 위치 (자녀 폰: 내 GPS / 보호자 폰: 서버에서 받은 값)
     val ieRatio: Float = 2.0f, // 호기:흡기 비율 (1 : x)
     // 호흡 그래프 점들 (0~1 사이 높이 값)
-    val breathSeries: List<Float> = listOf(0.35f, 0.6f, 0.3f, 0.55f, 0.35f, 0.4f, 0.95f, 0.5f),
-    val devices: List<DeviceInfo> = listOf(
-        DeviceInfo("Galaxy Watch", 88, R.drawable.ic_watch),
-        DeviceInfo("ESP 32-Vest", 70, R.drawable.ic_vest)
-    )
+    val breathSeries: List<Float> = listOf(0.35f, 0.6f, 0.3f, 0.55f, 0.35f, 0.4f, 0.95f, 0.5f)
+    // (예전의 하드코딩된 기기 목록 devices 는 삭제. 기기 관리 탭이 워치·조끼의 실제 상태를 직접 보여 준다)
 )
 
 // 알림 단계

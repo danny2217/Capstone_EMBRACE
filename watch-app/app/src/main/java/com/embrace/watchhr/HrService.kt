@@ -28,7 +28,7 @@ import kotlin.math.roundToInt
  *   (v1 은 조끼 ESP 로 BLE 직접 전송. v2 부터는 폰이 조끼로 전달한다 — 11/22 설계 변경)
  *
  * 심박: 화면이 꺼지면 Health Services 가 묶어서(배치) 보낸다 → HEART_RATE_5_SECONDS 요청.
- * 위치: 워치에서는 보내지 않는다 (위치 전송 기능 제거).
+ * 위치: v2.1(11/24)부터 보내지 않는다. 아동용 폰이 자기 GPS 로 직접 잡는다 (워치 GPS 를 끄면 배터리도 아낌).
  */
 class HrService : Service() {
 
@@ -107,8 +107,9 @@ class HrService : Service() {
                     StatusBus.link("이 워치는 운동 중 심박을 지원하지 않음")
                     return@addListener
                 }
+                // 심박만 요청. GPS 는 끈다 (위치는 폰 담당)
                 val builder = ExerciseConfig.builder(type)
-                    .setDataTypes(setOf(DataType.HEART_RATE_BPM))
+                    .setDataTypes(setOf<DataType<*, *>>(DataType.HEART_RATE_BPM))
                     .setIsAutoPauseAndResumeEnabled(false)
                     .setIsGpsEnabled(false)
                 if (BatchingMode.HEART_RATE_5_SECONDS in caps.supportedBatchingModeOverrides) {
@@ -129,7 +130,7 @@ class HrService : Service() {
         }, ContextCompat.getMainExecutor(this))
     }
 
-    /** 심박을 주는 운동 종류 중 하나를 고른다. 걷기를 우선 (대부분의 워치가 지원, GPS 도 지원). */
+    /** 심박을 주는 운동 종류 중 하나를 고른다. 걷기를 우선 (대부분의 워치가 지원). */
     private fun pickExerciseType(caps: ExerciseCapabilities): ExerciseType? {
         fun hasHr(t: ExerciseType) =
             DataType.HEART_RATE_BPM in caps.getExerciseTypeCapabilities(t).supportedDataTypes
@@ -140,7 +141,7 @@ class HrService : Service() {
 
     override fun onDestroy() {
         isRunning = false
-        // 운동 세션을 반드시 끝낸다. 안 끝내면 심박 센서·GPS 가 계속 켜져 배터리가 닳는다.
+        // 운동 세션을 반드시 끝낸다. 안 끝내면 심박 센서가 계속 켜져 배터리가 닳는다.
         exerciseClient.endExerciseAsync()
         exerciseClient.clearUpdateCallbackAsync(callback)
         link.stop()

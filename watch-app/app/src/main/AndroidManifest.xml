@@ -1,30 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  EMBRACE 워치 앱 v2 (Galaxy Watch5, Wear OS) — 심박·위치를 아동용 폰 앱으로 보낸다
+  EMBRACE 워치 앱 v2.1 (Galaxy Watch5, Wear OS) — 심박을 아동용 폰 앱으로 보낸다
+  v2.1 (11/24): 위치 전송 삭제. 위치는 아동용 폰이 자기 GPS 로 직접 잡는다.
   템플릿이 만든 app/src/main/AndroidManifest.xml 을 이 파일로 통째로 바꾼다.
 
   v1 과 다른 점 (11/22 설계 변경: 워치 → 폰 → 조끼)
     - 조끼(ESP)에 직접 붙지 않으므로 BLUETOOTH_SCAN / CONNECT 권한 삭제
-    - 위치 권한 + 위치 포그라운드 서비스 추가
     - 폰 전송은 Wear OS Data Layer 가 하므로 별도 블루투스 권한이 필요 없다
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-feature android:name="android.hardware.type.watch" />
-    <uses-feature android:name="android.hardware.location.gps" android:required="false" />
 
     <!-- 심박: Wear OS 5.1 이하 = BODY_SENSORS, Wear OS 6 이상 = READ_HEART_RATE -->
     <uses-permission android:name="android.permission.BODY_SENSORS" android:maxSdkVersion="35" />
     <uses-permission android:name="android.permission.health.READ_HEART_RATE" />
 
-    <!-- 위치 (운동 세션의 GPS) -->
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-
     <!-- 화면이 꺼져도 계속 돌게 하는 포그라운드 서비스 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_HEALTH" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
@@ -49,6 +43,6 @@
         <service
             android:name=".HrService"
             android:exported="false"
-            android:foregroundServiceType="health|location" />
+            android:foregroundServiceType="health" />
     </application>
 </manifest>

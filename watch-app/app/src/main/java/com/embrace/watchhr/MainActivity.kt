@@ -12,7 +12,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 
 /**
- * 화면 하나: 심박 / 폰 연결 상태 / 시작·중지 버튼.
+ * 화면 하나: 심박 / 폰 연결 상태 / 시작·중지 버튼. (위치는 v2.1 에서 삭제 — 폰이 직접 잡음)
  * 레이아웃 XML 없이 코드로 만든다 → 템플릿이 무엇이든(Compose 든 아니든) 그대로 동작.
  */
 class MainActivity : Activity() {

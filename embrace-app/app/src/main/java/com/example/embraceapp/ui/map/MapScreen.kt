@@ -100,7 +100,7 @@ fun MapScreen() {
     var granted by remember { mutableStateOf(locPerms.any { hasPermission(ctx, it) }) } // 위치 권한 허용 여부
     var mapView by remember { mutableStateOf<MapView?>(null) }
     var myOverlay by remember { mutableStateOf<MyLocationNewOverlay?>(null) }
-    var childMarker by remember { mutableStateOf<Marker?>(null) } // 워치에서 받은 자녀 위치 핀
+    var childMarker by remember { mutableStateOf<Marker?>(null) } // 자녀 위치 핀 (보호자 폰: 서버에서 받은 자녀 폰 GPS)
     val sensor by SensorRepository.state.collectAsState()
     val childLoc = sensor.childLocation
 
@@ -126,7 +126,7 @@ fun MapScreen() {
             myOverlay = overlay
         }
     }
-    // 워치에서 자녀 위치가 오면 핀을 찍고 (처음 한 번은) 그 위치로 이동
+    // 자녀 위치가 오면 핀을 찍고 (처음 한 번은) 그 위치로 이동
     LaunchedEffect(childLoc, mapView) {
         val map = mapView ?: return@LaunchedEffect
         val loc = childLoc ?: return@LaunchedEffect

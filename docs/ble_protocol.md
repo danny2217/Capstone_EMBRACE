@@ -19,7 +19,7 @@
 | path | JSON |
 |---|---|
 | `/embrace/hr` | `{"type":"hr","v":1,"bpm":72,"valid":true,"seq":12,"ts":1732240000000}` |
-| `/embrace/loc` | `{"type":"loc","v":1,"lat":37.50,"lon":126.95,"acc_m":8.0,"ts":1732240000000}` (`acc_m` 생략 가능) |
+| `/embrace/loc` | ~~`{"type":"loc",...}`~~ **2026-11-23 폐기 — 폰이 무시, 워치 v2.1(11/24)도 더 이상 안 보냄.** 위치는 아동용 폰 GPS(`location/ChildLocationTracker.kt`, 10 s)가 직접 잡아 `POST /api/location` |
 
 - `v ≠ 1`, JSON 오류, `lat`/`lon` 없음 → 폰이 무시.
 - 전달 조건: 워치·폰 앱 **`applicationId` 동일 (`com.example.embraceapp`)** + 같은 서명 키 + 폰에 `WearableListenerService`(`.wear.WatchReceiver`) 등록.
