@@ -365,6 +365,7 @@ fun DeviceTab() {
     val statusCount by VestConnection.statusCount.collectAsState() // 조끼 상태 수신 횟수
     val watchNode by WatchLink.nodeName.collectAsState()   // 폰과 연결된 워치 이름
     val watchChecked by WatchLink.checked.collectAsState()
+    val watchPaused by WatchLink.paused.collectAsState()    // [연결 해제] 눌렀는지
     var scanned by remember { mutableStateOf(false) }    // 한 번이라도 검색했는지
     // 자녀 폰: 워치 연결 여부를 10초마다 확인
     LaunchedEffect(isChild) { while (isChild) { WatchLink.refresh(ctx); delay(10_000) } }
@@ -431,6 +432,7 @@ fun DeviceTab() {
     val hrFresh = w != null && now - w.receivedAt < 15_000 // 15초 안에 심박이 왔으면 "수신 중"
     val hrAgo = w?.let { ((now - it.receivedAt) / 1000).coerceAtLeast(0) }
     val watchStatus = when {
+        isChild && watchPaused -> "연결 해제됨 · 심박을 받지 않아요 ([연결]을 누르면 다시 받아요)"
         hrFresh && w!!.valid -> "심박 수신 중 · ${w.bpm} BPM"
         hrFresh -> "워치 앱 연결됨 · 심박 측정 중..."
         !isChild -> if (w == null) "자녀 워치 심박이 아직 없어요" else "최근 심박 ${hrAgo}초 전 · 자녀 폰 확인 필요"
@@ -443,10 +445,21 @@ fun DeviceTab() {
         iconRes = R.drawable.ic_watch,
         name = if (isChild) (watchNode ?: "Galaxy Watch") else "자녀 워치",
         status = watchStatus,
-        ok = hrFresh,
-        battery = w?.battery?.takeIf { hrFresh }?.let { "$it%" },
-        buttonText = if (isChild) "새로고침" else null,
-        onButton = { WatchLink.refresh(ctx) }
+        ok = hrFresh && !(isChild && watchPaused),
+        battery = w?.battery?.takeIf { hrFresh && !(isChild && watchPaused) }?.let { "$it%" },
+        buttonText = when {
+            !isChild -> null
+            watchPaused -> "연결"
+            watchNode != null -> "연결 해제"
+            else -> "새로고침"          // 폰과 연결된 워치가 아직 없을 때만: 다시 찾아보기
+        },
+        onButton = {
+            when {
+                watchPaused -> WatchLink.connect(ctx)
+                watchNode != null -> WatchLink.disconnect()
+                else -> WatchLink.refresh(ctx)
+            }
+        }
     )
     Spacer(Modifier.height(14.dp))
     val vest = sensor.vest

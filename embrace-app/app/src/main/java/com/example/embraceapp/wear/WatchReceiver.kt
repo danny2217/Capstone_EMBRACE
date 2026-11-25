@@ -19,6 +19,7 @@ class WatchReceiver : WearableListenerService() {
     override fun onMessageReceived(event: MessageEvent) {
         val json = try { JSONObject(String(event.data, Charsets.UTF_8)) } catch (e: Exception) { return }
         if (json.optInt("v", 1) != 1) return // 모르는 버전은 무시
+        if (WatchLink.paused.value) return     // 기기 관리에서 [연결 해제] 한 상태 → 받지 않음
 
         when (event.path) {
             "/embrace/hr" -> {

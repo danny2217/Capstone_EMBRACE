@@ -241,14 +241,180 @@ fun SettingsScreen(nav: Nav) {
             Switch(isDarkTheme, { isDarkTheme = it }, colors = SwitchDefaults.colors(checkedTrackColor = AccentBlue, checkedThumbColor = Color.White))
         }) { isDarkTheme = !isDarkTheme }
         Spacer(Modifier.height(48.dp))
-        Text("앱 정보", Modifier.fillMaxWidth().padding(bottom = 8.dp), fontSize = 13.sp)
-        Surface(shape = RoundedCornerShape(16.dp), color = BgPeach, modifier = Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                Text("앱버전  1.0.0", fontSize = 12.sp)
-                Text("개발자", fontSize = 12.sp)
-                Text("기기정보", fontSize = 12.sp)
+        AppInfoSection()
+    }
+}
+
+// 앱 정보 한 줄 (왼쪽 항목 이름 + 오른쪽 값)
+@Composable
+private fun InfoLine(label: String, value: String, modifier: Modifier = Modifier) {
+    Row(modifier.fillMaxWidth()) {
+        Text(label, fontSize = 12.sp, color = IconGray, modifier = Modifier.width(72.dp))
+        Text(value, fontSize = 12.sp, color = TextCharcoal)
+    }
+}
+
+// ───────── 설정 하단: 앱 정보 / 개발자 정보 / 기기 정보 (+ 숨은 개발자 도구) ─────────
+// 맨 아래 [개발자 도구] 메뉴는 항상 보인다 (시연용). 누르면 경고를 한 번 보여 주고 연다.
+@Composable
+fun AppInfoSection() {
+    val ctx = LocalContext.current
+    val version = remember {
+        try { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName ?: "-" } catch (e: Exception) { "-" }
+    }
+    val link by VestConnection.link.collectAsState()
+    var devOpen by remember { mutableStateOf(false) }
+    var devWarn by remember { mutableStateOf(false) }
+
+    Text("앱 정보", Modifier.fillMaxWidth().padding(bottom = 8.dp), fontSize = 13.sp)
+    Surface(shape = RoundedCornerShape(16.dp), color = BgPeach, modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            InfoLine("앱 이름", "EMBRACE")
+            InfoLine("앱 버전", version)
+            InfoLine("설명", "자폐 스펙트럼 아동을 위한 스마트 압박 조끼 보조 앱")
+        }
+    }
+
+    Spacer(Modifier.height(20.dp))
+    Text("개발자 정보", Modifier.fillMaxWidth().padding(bottom = 8.dp), fontSize = 13.sp)
+    Surface(shape = RoundedCornerShape(16.dp), color = BgPeach, modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            InfoLine("팀", "EMBRACE (캡스톤디자인)")
+            InfoLine("신희", "앱 UI · 화면 설계 · API 명세")
+            InfoLine("지후", "센서 · BLE 통신")
+            InfoLine("성환", "하드웨어 · DB · 서버")
+        }
+    }
+
+    Spacer(Modifier.height(20.dp))
+    Text("기기 정보", Modifier.fillMaxWidth().padding(bottom = 8.dp), fontSize = 13.sp)
+    Surface(shape = RoundedCornerShape(16.dp), color = BgPeach, modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            InfoLine("휴대폰", "${Build.MANUFACTURER} ${Build.MODEL}")
+            InfoLine("Android", "${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
+            InfoLine("조끼", when (link) {
+                VestLink.Connected -> "${VestConnection.VEST_NAME} 연결됨"
+                VestLink.Connecting -> "연결 중..."
+                VestLink.Disconnected -> "연결 안 됨"
+            })
+            InfoLine("서버", if (AppConfig.SERVER_URL.isNotBlank() && AppConfig.API_KEY.isNotBlank()) "설정됨" else "설정 안 됨")
+        }
+    }
+
+    Spacer(Modifier.height(20.dp))
+    if (devOpen) {
+        DevToolsSection(onClose = { devOpen = false })
+    } else {
+        // 개발자 도구 메뉴 (항상 보임)
+        Surface(
+            shape = RoundedCornerShape(16.dp), color = BgPeach,
+            modifier = Modifier.fillMaxWidth().clickable { devWarn = true }
+        ) {
+            Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("개발자 도구", fontSize = 13.sp, color = TextCharcoal)
+                    Text("수동 가압 · 배기 · 에어펌프/밸브 상태 확인", fontSize = 11.sp, color = IconGray)
+                }
+                Text("›", fontSize = 22.sp, color = TextCharcoal)
             }
         }
+    }
+    if (devWarn) {
+        ConfirmDialog(
+            title = "개발자 도구",
+            question = "개발자 테스트용 기능이에요. 아이가 조끼를 입지 않은 상태에서만 사용해 주세요.",
+            confirmText = "열기",
+            onConfirm = { devWarn = false; devOpen = true },
+            onCancel = { devWarn = false }
+        )
+    }
+    Spacer(Modifier.height(24.dp))
+}
+
+// ───────── 개발자 도구 (시연용) ─────────
+// [가압 시작] = 'i' (펌프 ON + 밸브 닫힘 → 정해진 시간 뒤 자동 유지 → 배기)
+// [배기]      = 'd' (펌프 OFF + 밸브 열림)
+// [비상 배기] = 'x' (즉시 배기 후 잠금, 잠금 해제는 조끼에서)
+// ⚠ 'i' 는 펌웨어 hr_link.cpp onCommand 가 받도록 바뀐 뒤에 동작한다.
+//   PNEUMATIC_ARMED=false 인 동안은 상태 값만 바뀌고 실제 펌프·밸브는 움직이지 않는다.
+@Composable
+fun DevToolsSection(onClose: () -> Unit) {
+    val sensor by SensorRepository.state.collectAsState()
+    val link by VestConnection.link.collectAsState()
+    val v = sensor.vest
+    var confirmExhaust by remember { mutableStateOf(false) }
+    var confirmInflate by remember { mutableStateOf(false) }
+    var result by remember { mutableStateOf<String?>(null) }
+
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text("개발자 도구", fontSize = 13.sp, modifier = Modifier.weight(1f))
+        Text("닫기", fontSize = 12.sp, color = LinkBlue, modifier = Modifier.clickable { onClose() })
+    }
+    Spacer(Modifier.height(8.dp))
+    Surface(shape = RoundedCornerShape(16.dp), color = BgPeach, modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("아이가 조끼를 입지 않은 상태에서만 사용하세요.", fontSize = 11.sp, color = SosRed)
+            if (link != VestLink.Connected || v == null) {
+                Text("조끼가 연결되지 않았어요. 홈 > 기기 관리에서 먼저 연결해 주세요.", fontSize = 12.sp, color = IconGray)
+            } else {
+                Text("조끼 상태: ${v.stateName} (${v.inStateSec}초째)", fontSize = 12.sp)
+                Text("에어펌프: ${if (v.pump) "켜짐" else "꺼짐"}   ·   솔레노이드 밸브: ${if (v.valveOpen) "열림" else "닫힘"}", fontSize = 12.sp)
+                Text(if (v.armed) "실제 구동 모드" else "연습 모드 (펌프·밸브가 실제로 움직이지 않음)", fontSize = 11.sp, color = IconGray)
+            }
+
+            // 수동 가압 / 배기
+            val connected = link == VestLink.Connected
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = { confirmInflate = true },
+                    enabled = connected,
+                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryCoral, contentColor = Color.White),
+                    modifier = Modifier.weight(1f)
+                ) { Text("가압 시작", fontSize = 12.sp) }
+                Button(
+                    onClick = { result = if (VestConnection.deflate()) "배기 명령을 보냈어요." else "보내지 못했어요. 조끼 연결을 확인해 주세요." },
+                    enabled = connected,
+                    colors = ButtonDefaults.buttonColors(containerColor = BgPeach, contentColor = TextCharcoal),
+                    modifier = Modifier.weight(1f)
+                ) { Text("배기", fontSize = 12.sp) }
+            }
+            Text("가압은 '대기' 상태에서만 시작돼요. 정해진 시간이 지나면 조끼가 알아서 유지 → 배기로 넘어가요.", fontSize = 11.sp, color = IconGray)
+
+            // 지금 펌웨어가 받는 명령: 비상 배기
+            Button(
+                onClick = { confirmExhaust = true },
+                enabled = link == VestLink.Connected,
+                colors = ButtonDefaults.buttonColors(containerColor = SosRed, contentColor = Color.White),
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("비상 배기 보내기", fontSize = 12.sp) }
+            result?.let { Text(it, fontSize = 11.sp, color = IconGray) }
+        }
+    }
+
+    if (confirmInflate) {
+        ConfirmDialog(
+            title = "가압 시작",
+            question = "조끼에 공기를 넣어요. 아이가 입지 않은 상태인지 확인해 주세요.",
+            confirmText = "가압",
+            onConfirm = {
+                confirmInflate = false
+                result = if (VestConnection.inflate()) "가압 명령을 보냈어요. 조끼 상태가 '가압 중'으로 바뀌는지 확인해 주세요." else "보내지 못했어요. 조끼 연결을 확인해 주세요."
+            },
+            onCancel = { confirmInflate = false }
+        )
+    }
+
+    if (confirmExhaust) {
+        ConfirmDialog(
+            title = "비상 배기",
+            question = "조끼의 공기를 모두 빼요. 배기 후에는 조끼에서 잠금 해제를 해야 다시 가압할 수 있어요.",
+            confirmText = "보내기",
+            onConfirm = {
+                confirmExhaust = false
+                result = if (VestConnection.exhaust()) "비상 배기 명령을 보냈어요." else "보내지 못했어요. 조끼 연결을 확인해 주세요."
+            },
+            onCancel = { confirmExhaust = false }
+        )
     }
 }
 

@@ -21,6 +21,14 @@ object WatchLink {
     private val _msgCount = MutableStateFlow(0) // 워치 앱에서 받은 메시지 수
     val msgCount: StateFlow<Int> = _msgCount.asStateFlow()
 
+    // [연결 해제] 를 누르면 true → 워치 심박을 받지도, 조끼로 넘기지도 않는다.
+    // (워치와 폰의 블루투스 페어링 자체는 Galaxy Wearable 앱이 관리하므로 여기서 끊지 않는다)
+    private val _paused = MutableStateFlow(false)
+    val paused: StateFlow<Boolean> = _paused.asStateFlow()
+
+    fun disconnect() { _paused.value = true }
+    fun connect(ctx: Context) { _paused.value = false; refresh(ctx) }
+
     // 폰과 연결된 워치 목록 확인 (결과는 nodeName 으로)
     fun refresh(ctx: Context) {
         Wearable.getNodeClient(ctx.applicationContext).connectedNodes

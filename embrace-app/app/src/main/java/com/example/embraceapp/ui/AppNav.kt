@@ -116,10 +116,10 @@ fun EmbraceApp() {
     val nav = remember { Nav() }
     val s = nav.current
 
-    // 시작 화면 2초 뒤 로그인/가입 선택 화면으로 이동
+    // 시작 로고 화면은 기다리지 않고 바로 로그인/가입 선택 화면(또는 홈)으로 이동
+    // (안드로이드 12+ 는 앱 시작 화면에 이미 파란 배경+로고가 나온다)
     val ctx = androidx.compose.ui.platform.LocalContext.current
     LaunchedEffect(Unit) {
-        delay(2000)
         if (nav.current == Screen.Splash) {
             // 로그인 화면에서 "자동 로그인"을 체크하지 않았다면, 앱을 다시 켰을 때 로그아웃 상태로 시작
             val auto = ctx.getSharedPreferences("embrace_prefs", android.content.Context.MODE_PRIVATE).getBoolean("auto_login", false)
