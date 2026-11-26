@@ -334,7 +334,8 @@ fun AppInfoSection() {
 // ───────── 개발자 도구 (시연용) ─────────
 // [가압 시작] = 'i' (펌프 ON + 밸브 닫힘 → 정해진 시간 뒤 자동 유지 → 배기)
 // [배기]      = 'd' (펌프 OFF + 밸브 열림)
-// [비상 배기] = 'x' (즉시 배기 후 잠금, 잠금 해제는 조끼에서)
+// [비상 배기] = 'x' (즉시 배기 후 잠금)
+// [잠금 해제] = 'r' (잠금 → 대기. 펌웨어가 앱의 'r' 을 받아야 동작)
 // ⚠ 'i' 는 펌웨어 hr_link.cpp onCommand 가 받도록 바뀐 뒤에 동작한다.
 //   PNEUMATIC_ARMED=false 인 동안은 상태 값만 바뀌고 실제 펌프·밸브는 움직이지 않는다.
 @Composable
@@ -350,9 +351,23 @@ fun DevToolsSection(onClose: () -> Unit) {
         val (cmd, _) = check ?: return@LaunchedEffect
         kotlinx.coroutines.delay(2_500)
         val st = SensorRepository.state.value.vest?.stateCode
-        result = when (cmd) {
-            'i' -> if (st == 2 || st == 3) "가압 중이에요." else
-                "조끼가 가압을 시작하지 않았어요. 지금 조끼 펌웨어는 앱의 가압 명령을 받지 않아요 (펌웨어 수정 필요)."
+        result = when {
+            st == null -> "조끼 연결이 끊겼어요. 다시 연결해 주세요."
+            cmd == 'i' -> when (st) {
+                2, 3 -> "가압 중이에요."
+                0 -> "조끼가 켜진 직후 배기 중이라 가압하지 않았어요. 몇 초 뒤 다시 눌러 주세요."
+                4 -> "배기 중이라 가압하지 않았어요. 배기가 끝난 뒤 다시 눌러 주세요."
+                5 -> "배기 후 쉬는 시간(1분)이라 조끼가 가압을 거부했어요."
+                6 -> "비상 배기 중이라 가압하지 않았어요. 배기가 끝나면 [잠금 해제] 후 다시 눌러 주세요."
+                7 -> "잠금 상태라 조끼가 가압을 거부했어요. [잠금 해제]를 먼저 눌러 주세요."
+                else -> "조끼가 가압을 시작하지 않았어요. 센서가 아직 준비되지 않았거나, 조끼 펌웨어가 앱의 가압 명령을 받지 않는 버전이에요."
+            }
+            cmd == 'r' -> when (st) {
+                7 -> "아직 잠금 상태예요. 조끼 펌웨어가 앱의 잠금 해제 명령을 받는 버전인지 확인해 주세요."
+                6 -> "비상 배기 중(20초)이라 아직 풀 수 없어요. 배기가 끝나면 다시 눌러 주세요."
+                1 -> "잠금이 풀렸어요. 이제 가압할 수 있어요."
+                else -> "잠금 상태가 아니에요. 바로 가압할 수 있어요."
+            }
             else -> if (st == 4 || st == 6) "배기 중이에요." else
                 "배기할 공기가 없어요. 배기는 가압 또는 유지 중일 때만 돼요."
         }
@@ -396,6 +411,20 @@ fun DevToolsSection(onClose: () -> Unit) {
                     modifier = Modifier.weight(1f)
                 ) { Text("배기", fontSize = 12.sp) }
             }
+            // 잠금 해제: 비상 배기 뒤 잠금(7) 상태를 풀어 대기로 돌린다
+            val locked = v?.stateCode == 7
+            Button(
+                onClick = {
+                    if (VestConnection.unlock()) { result = "잠금 해제 명령을 보냈어요..."; check = 'r' to System.currentTimeMillis() }
+                    else result = "보내지 못했어요. 조끼 연결을 확인해 주세요."
+                },
+                enabled = connected,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (locked) AccentBlue else InactiveGray,
+                    contentColor = if (locked) Color.White else TextCharcoal
+                ),
+                modifier = Modifier.fillMaxWidth()
+            ) { Text(if (locked) "잠금 해제 (지금 잠금 상태)" else "잠금 해제", fontSize = 12.sp) }
             Text("누르면 바로 명령을 보내요. 2~3초 뒤 조끼 상태가 바뀌었는지 아래에 알려 줘요.", fontSize = 11.sp, color = IconGray)
 
             // 지금 펌웨어가 받는 명령: 비상 배기
@@ -412,7 +441,7 @@ fun DevToolsSection(onClose: () -> Unit) {
     if (confirmExhaust) {
         ConfirmDialog(
             title = "비상 배기",
-            question = "조끼의 공기를 모두 빼요. 배기 후에는 조끼에서 잠금 해제를 해야 다시 가압할 수 있어요.",
+            question = "조끼의 공기를 모두 빼요. 배기 후에는 [잠금 해제]를 눌러야 다시 가압할 수 있어요.",
             confirmText = "보내기",
             onConfirm = {
                 confirmExhaust = false
