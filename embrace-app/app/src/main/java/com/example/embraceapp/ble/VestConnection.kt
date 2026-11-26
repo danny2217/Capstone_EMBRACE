@@ -45,6 +45,7 @@ object VestConnection {
     private val HR_IN: UUID = UUID.fromString("e3b70002-5c3a-4f6e-9a1d-2b8f0c4d7e10")   // 심박 쓰기
     private val STATUS: UUID = UUID.fromString("e3b70003-5c3a-4f6e-9a1d-2b8f0c4d7e10")  // 조끼 상태 알림(1초마다 20바이트)
     private val CMD: UUID = UUID.fromString("e3b70004-5c3a-4f6e-9a1d-2b8f0c4d7e10")     // 명령 쓰기(배기만)
+    private val WAVE: UUID = UUID.fromString("e3b70005-5c3a-4f6e-9a1d-2b8f0c4d7e10")    // 호흡 파형 알림 (실시간 그래프, 새 펌웨어만)
     private val CCCD: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")     // 알림 켜기용 표준 UUID
 
     // 비상 배기 명령 값. 조끼는 'd'(배기) / 'x'(비상 배기)만 받음 → SOS 는 'x' 로 확정 (2026-11-23 팀 결정)
@@ -72,6 +73,7 @@ object VestConnection {
     private var gatt: BluetoothGatt? = null
     private var hrChar: BluetoothGattCharacteristic? = null
     private var cmdChar: BluetoothGattCharacteristic? = null
+    private var waveChar: BluetoothGattCharacteristic? = null // STATUS 알림을 켠 다음에 이어서 켠다
     private var seq = 0
     private var appCtx: Context? = null   // 푸시 알림용
     private var userClosing = false       // 사용자가 직접 끊는 중인지 (이때는 "끊어졌어요" 안내를 안 띄움)
@@ -174,18 +176,27 @@ object VestConnection {
             _lastStatus.value = null
             _link.value = VestLink.Connected
 
-            // 상태(STATUS) 알림 켜기
+            // 상태(STATUS) 알림 켜기 → 끝나면 onDescriptorWrite 에서 호흡 파형(WAVE) 알림도 켠다
+            // (안드로이드는 GATT 작업을 한 번에 하나만 처리하므로 차례로 켜야 함)
+            waveChar = service.getCharacteristic(WAVE) // 예전 펌웨어에는 없음 → 그래프는 호흡수 변화로 대신 그림
+            BreathWave.clear()
             val st = service.getCharacteristic(STATUS)
             if (st != null) {
                 g.setCharacteristicNotification(st, true)
                 val cccd = st.getDescriptor(CCCD)
                 if (cccd != null) writeDescriptor(g, cccd, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
-            }
+                else enableWave(g)
+            } else enableWave(g)
+        }
+
+        override fun onDescriptorWrite(g: BluetoothGatt, d: BluetoothGattDescriptor, status: Int) {
+            if (d.characteristic.uuid == STATUS) enableWave(g)
         }
 
         // 안드로이드 13 이상: 값이 바로 들어옴
         override fun onCharacteristicChanged(g: BluetoothGatt, c: BluetoothGattCharacteristic, value: ByteArray) {
             if (c.uuid == STATUS) onStatus(value)
+            else if (c.uuid == WAVE) BreathWave.onPacket(value)
         }
 
         // 안드로이드 12 이하
@@ -193,7 +204,16 @@ object VestConnection {
         @Suppress("DEPRECATION")
         override fun onCharacteristicChanged(g: BluetoothGatt, c: BluetoothGattCharacteristic) {
             if (c.uuid == STATUS) c.value?.let { onStatus(it) }
+            else if (c.uuid == WAVE) c.value?.let { BreathWave.onPacket(it) }
         }
+    }
+
+    // 호흡 파형 알림 켜기 (새 펌웨어에만 있음)
+    @SuppressLint("MissingPermission")
+    private fun enableWave(g: BluetoothGatt) {
+        val w = waveChar ?: return
+        g.setCharacteristicNotification(w, true)
+        w.getDescriptor(CCCD)?.let { writeDescriptor(g, it, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE) }
     }
 
     // 조끼가 1초마다 보내는 상태(20바이트) 받기
@@ -233,6 +253,8 @@ object VestConnection {
             gatt = null
             hrChar = null
             cmdChar = null
+            waveChar = null
+            BreathWave.clear()
             _lastStatus.value = null
             _address.value = null
             _link.value = VestLink.Disconnected
