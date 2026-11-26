@@ -50,6 +50,9 @@ data class WatchHr(val bpm: Int, val valid: Boolean, val receivedAt: Long, val b
 // 워치가 보낸 자녀 위치
 data class ChildLocation(val lat: Double, val lon: Double, val accuracyM: Double?, val receivedAt: Long)
 
+// 호흡 그래프 점 하나: 받은 시각(ms) + 호흡수(회/분)
+data class BreathPoint(val t: Long, val rate: Float)
+
 // 센서에서 온 값 전체 묶음
 data class SensorState(
     val vitals: VitalSigns = VitalSigns(),
@@ -57,8 +60,9 @@ data class SensorState(
     val watchHr: WatchHr? = null, // 워치에서 받은 마지막 심박
     val childLocation: ChildLocation? = null, // 자녀 마지막 위치 (자녀 폰: 내 GPS / 보호자 폰: 서버에서 받은 값)
     val ieRatio: Float = 2.0f, // 호기:흡기 비율 (1 : x)
-    // 호흡 그래프 점들 (0~1 사이 높이 값)
-    val breathSeries: List<Float> = listOf(0.35f, 0.6f, 0.3f, 0.55f, 0.35f, 0.4f, 0.95f, 0.5f)
+    // 호흡 그래프: 조끼가 보낸 호흡수(회/분)를 받은 시각과 함께 쌓아 둔 목록 (최근 BREATH_HISTORY_MS 만 보관)
+    // 예전의 예시 값(breathSeries) 은 실제 숨과 상관없이 움직여서 삭제
+    val breathHistory: List<BreathPoint> = emptyList()
     // (예전의 하드코딩된 기기 목록 devices 는 삭제. 기기 관리 탭이 워치·조끼의 실제 상태를 직접 보여 준다)
 )
 
