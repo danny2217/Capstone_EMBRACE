@@ -282,7 +282,7 @@ fun BreathChart() {
     }
 }
 
-// ① 실시간 파형 (필터 거친 값, 위 = 들숨)
+// 실시간 파형 (필터 거친 값, 위 = 들숨) — 예전 예시 그래프와 같은 모양: 부드러운 곡선 + 아래로 옅어지는 채우기
 @Composable
 private fun BreathWaveCanvas(wave: BreathWave.Snapshot, now: Long) {
     val per = BreathWave.FS.toInt()                    // 초당 샘플 수
@@ -297,7 +297,7 @@ private fun BreathWaveCanvas(wave: BreathWave.Snapshot, now: Long) {
     }
     // 세로 범위: 보이는 값의 최소~최대 (최소 폭 20 mV → 숨을 안 쉴 때 잡음이 크게 부풀지 않게)
     val mid = (finite.max() + finite.min()) / 2f
-    val half = maxOf(10f, (finite.max() - finite.min()) / 2f) * 1.15f
+    val half = maxOf(10f, (finite.max() - finite.min()) / 2f) * 1.25f
     Canvas(Modifier.fillMaxSize()) {
         val w = size.width
         val h = size.height
@@ -305,15 +305,43 @@ private fun BreathWaveCanvas(wave: BreathWave.Snapshot, now: Long) {
         val last = ys.size - 1
         fun x(i: Int) = w - (last - i + shift) * dx
         fun y(v: Float) = h * (0.5f - (v - mid) / (2f * half))
-        val line = Path()
-        var pen = false
+
+        // 점 목록을 구간으로 나눔. 1 초보다 짧은 빈칸(센서 순간 이상)은 이어서 그리고, 긴 빈칸에서만 끊는다
+        val segments = mutableListOf<MutableList<Offset>>()
+        var cur = mutableListOf<Offset>()
+        var gap = 0
         for (i in ys.indices) {
             val v = ys[i]
             val xi = x(i)
-            if (v.isNaN() || xi < -dx) { pen = false; continue }
-            if (!pen) { line.moveTo(xi, y(v)); pen = true } else line.lineTo(xi, y(v))
+            if (xi < -dx) continue
+            if (v.isNaN()) { gap++; continue }
+            if (gap > per && cur.isNotEmpty()) { segments.add(cur); cur = mutableListOf() }
+            gap = 0
+            cur.add(Offset(xi, y(v)))
         }
-        drawPath(line, ChartLine, style = Stroke(width = 6f, cap = StrokeCap.Round, join = StrokeJoin.Round))
+        if (cur.isNotEmpty()) segments.add(cur)
+
+        for (pts in segments) {
+            if (pts.size < 2) continue
+            // 부드러운 곡선 (예전 예시 그래프와 같은 3차 곡선 연결)
+            val line = Path().apply {
+                moveTo(pts[0].x, pts[0].y)
+                for (k in 1 until pts.size) {
+                    val p0 = pts[k - 1]; val p1 = pts[k]
+                    val cx = (p0.x + p1.x) / 2
+                    cubicTo(cx, p0.y, cx, p1.y, p1.x, p1.y)
+                }
+            }
+            // 곡선 아래를 위에서 아래로 옅어지게 채움
+            val fill = Path().apply {
+                addPath(line)
+                lineTo(pts.last().x, h)
+                lineTo(pts.first().x, h)
+                close()
+            }
+            drawPath(fill, Brush.verticalGradient(listOf(ChartLine.copy(alpha = 0.40f), Color.Transparent)))
+            drawPath(line, ChartLine, style = Stroke(width = 7f, cap = StrokeCap.Round, join = StrokeJoin.Round))
+        }
     }
 }
 
