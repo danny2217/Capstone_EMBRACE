@@ -78,10 +78,11 @@ static void onPacket(const uint8_t* p, size_t len) {
   portEXIT_CRITICAL(&s_lock);
 }
 
-// 앱 명령: 공기를 빼는 쪽만 받는다
+// 앱 명령: i 가압 / d 배기 / x 비상 배기 / r 잠금(LOCKOUT) 해제
+//  11/26: 앱 개발자 모드에서 가압·잠금 해제를 하도록 i·r 추가 (시리얼 명령과 같은 집합)
 static void onCommand(const uint8_t* p, size_t len) {
   const char c = len >= 1 ? static_cast<char>(p[0]) : 0;
-  const bool ok = (c == 'd' || c == 'x');
+  const bool ok = (c == 'i' || c == 'd' || c == 'x' || c == 'r');
   if (ok) ctlCommand(c);   // 큐에 넣기만 한다 (상태 머신이 다음 주기에 처리, 거부 사유는 '# EVT' 로 찍힘)
   portENTER_CRITICAL(&s_lock);
   if (ok) s_cmdOk++; else s_cmdBad++;

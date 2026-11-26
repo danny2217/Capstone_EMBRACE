@@ -75,6 +75,7 @@ static void printHeader() {
   Serial.print("# columns:\tseq\tt_ms");
   for (size_t i = 0; i < n; i++) Serial.printf("\t%s", ch[i].name);
   if (cfg::SEND_MA) for (size_t i = 0; i < n; i++) Serial.printf("\t%s_ma", ch[i].name);
+  if (cfg::SEND_BREATH_BP) Serial.print("\tbreath_bp");   // 채널 열 뒤에 둔다 → flags 글자 순서는 그대로
   Serial.print("\tflags\n");
 }
 
@@ -86,6 +87,7 @@ static void printFrame(const Frame& f) {
   for (size_t i = 0; i < n; i++) len += snprintf(line + len, sizeof(line) - len, "\t%u", f.mv[i]);
   if (cfg::SEND_MA)
     for (size_t i = 0; i < n; i++) len += snprintf(line + len, sizeof(line) - len, "\t%u", f.ma[i]);
+  if (cfg::SEND_BREATH_BP) len += snprintf(line + len, sizeof(line) - len, "\t%d", f.br_bp);
   line[len++] = '\t';
   for (size_t i = 0; i < n; i++) line[len++] = static_cast<char>('0' + f.health[i]);
   line[len++] = '\n';

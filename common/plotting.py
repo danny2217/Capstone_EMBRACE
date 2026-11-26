@@ -4,6 +4,7 @@ from __future__ import annotations
 
 COLORS = {
     "breath": "#1f5fbf",
+    "breath_bp": "#0b8a8a",
     "grip_l": "#d9822b",
     "grip_r": "#7a4fbf",
     "chest": "#c0392b",

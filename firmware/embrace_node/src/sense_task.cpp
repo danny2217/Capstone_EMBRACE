@@ -11,6 +11,8 @@
 #include "adc_reader.h"
 #include "channel.h"
 #include "frame.h"
+#include "breath_filter.h"
+#include <string.h>
 
 static QueueHandle_t s_q = nullptr;
 static QueueHandle_t s_ctrlQ = nullptr;
@@ -27,6 +29,12 @@ static void senseTask(void*) {
   uint32_t prevUs = 0;
   TickType_t nextWake = xTaskGetTickCount();
 
+  int iBreath = -1;
+  for (size_t i = 0; i < n; i++)
+    if (strcmp(ch[i].name, "breath") == 0) iBreath = static_cast<int>(i);
+  BreathBandpass bp;
+  bp.begin(1000.0f / cfg::PERIOD_MS, cfg::BREATH_BP_HP_HZ, cfg::BREATH_BP_LP_HZ);
+
   for (;;) {
     const uint32_t startUs = micros();
     Frame f = {};
@@ -40,6 +48,17 @@ static void senseTask(void*) {
       f.mv[i] = static_cast<uint16_t>(mv);
       f.ma[i] = static_cast<uint16_t>(ch[i].ma.push(mv));
       f.health[i] = static_cast<uint8_t>(ch[i].updateHealth(mv, spread));
+    }
+
+    // 호흡 대역통과: 오버샘플 평균 mV 를 그대로 넣는다. 비정상(단선·단락)이면 필터를 처음부터 다시
+    if (iBreath >= 0) {
+      if (f.health[iBreath] == static_cast<uint8_t>(Health::Ok)) {
+        const float y = bp.update(static_cast<float>(f.mv[iBreath]));
+        f.br_bp = static_cast<int16_t>(y >= 0 ? y + 0.5f : y - 0.5f);
+      } else {
+        bp.reset();
+        f.br_bp = 0;
+      }
     }
 
     f.period_us = prevUs ? (startUs - prevUs) : 0;   // unsigned 뺄셈 → micros() 순환에도 안전

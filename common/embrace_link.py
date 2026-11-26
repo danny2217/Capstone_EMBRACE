@@ -42,7 +42,8 @@ DEFAULT_BAUD = 115200
 DEFAULT_FS = 50.0
 CHANNEL_ORDER = ("breath", "grip_l", "grip_r", "chest", "back")
 CHANNEL_KO = {"breath": "호흡", "grip_l": "악력 L", "grip_r": "악력 R",
-              "chest": "가슴 압박", "back": "등 압박"}
+              "chest": "가슴 압박", "back": "등 압박",
+              "breath_bp": "호흡 (필터 · 감지기 입력)"}
 HEALTH_NAME = {0: "ok", 1: "open", 2: "short"}
 HEALTH_KO = {0: "정상", 1: "단선", 2: "단락/상한"}
 

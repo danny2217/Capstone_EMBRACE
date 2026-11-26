@@ -105,6 +105,12 @@ constexpr uint8_t  OVERSAMPLE = 16;     // 1회 측정당 평균낼 변환 수 (
 constexpr uint8_t  MA_WINDOW  = 10;     // 이동 평균 길이 0.2 s (군지연 약 90 ms)
 constexpr bool     SEND_MA    = false;  // true 면 각 채널의 이동평균 열(<이름>_ma)도 보낸다
 
+// 호흡 대역통과 (Air-Rhythm 원본과 같은 값). 감지기는 이 값으로 숨을 센다.
+//  고역 0.08 Hz ≈ 분당 5 회보다 느린 흔들림 제거 / 저역 0.70 Hz ≈ 분당 42 회보다 빠른 잡음 제거
+constexpr float    BREATH_BP_HP_HZ = 0.08f;
+constexpr float    BREATH_BP_LP_HZ = 0.70f;
+constexpr bool     SEND_BREATH_BP  = true;   // true 면 'breath_bp' 열(필터 값)을 보낸다 → 비쥬얼라이저에 매끄러운 곡선
+
 // ---------------------------------------------------------------------------
 //  6) 상태 판정 문턱 (mV) — 같은 상태가 FAULT_HOLD 샘플 이상 이어질 때만 인정
 // ---------------------------------------------------------------------------
@@ -172,7 +178,8 @@ constexpr uint32_t HR_REPORT_MS      = 1000;          // '# hr ...' 진단 줄 �
 //  ★ ARMED = false 이면 상태 머신은 그대로 돌고 로그도 찍히지만 펌프·밸브 핀은 항상 LOW 다.
 //    (드라이런. 판단 규칙을 시험할 때는 이 상태로 둔다)
 //    실제로 가압하려면 true. 처음엔 반드시 에어백을 몸에 걸치지 않은 상태로 시험한다.
-constexpr bool PNEUMATIC_ARMED = false;
+//    11/26 팀 결정: 연습 모드를 쓰지 않는다 → 항상 true (펌프·밸브가 실제로 움직인다)
+constexpr bool PNEUMATIC_ARMED = true;
 
 // L298N 배선 (동료 코드 Air_pump_valve.ino 와 같은 핀). ENA/ENB 점퍼는 꽂아 둔 상태 가정.
 constexpr uint8_t PIN_PUMP_IN1  = 15;   // OUT1-OUT2 = 펌프

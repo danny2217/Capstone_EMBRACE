@@ -59,7 +59,8 @@ void detectorPush(const Frame& f) {
   // --- 호흡
   if (s_iBreath >= 0) {
     s_breathHealthy = f.health[s_iBreath] == static_cast<uint8_t>(Health::Ok);
-    s_breath.push(t, static_cast<float>(f.ma[s_iBreath]), s_breathHealthy);
+    // 대역통과 값(0 중심, 기준선 흔들림 제거)으로 숨을 센다. 예전에는 이동평균 f.ma 를 썼다.
+    s_breath.push(t, static_cast<float>(f.br_bp), s_breathHealthy);
   }
 
   // --- 악력 (단선/단락이면 쥠으로 보지 않는다)
