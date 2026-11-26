@@ -52,6 +52,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -248,24 +249,81 @@ fun VitalLine(iconRes: Int, label: String, value: String, unit: String) {
     }
 }
 
-// 호흡 그래프: 최근 2 분 동안 조끼가 보낸 호흡수(회/분)를 시간 순서로 이은 선
-//  - 조끼는 1 초마다 STATUS 를 보내고, 그 안의 호흡수는 "최근 1 분 평균"이라 숨을 바꿔도 천천히 따라온다
-//  - 실제 숨 곡선(들숨·날숨 파형)은 조끼가 보내지 않아서 그릴 수 없다 (펌웨어가 원본 값을 보내야 가능)
+// 호흡 그래프
+//  ① 실시간 파형 (자녀 폰 + 새 펌웨어): 조끼가 25 Hz 로 보내는 호흡 센서 값을 PC 프로그램과 같은 필터
+//     (0.08~0.7 Hz 대역통과, BreathWave.kt)로 걸러서 최근 20 초를 그린다. 숨 쉴 때마다 오르내린다.
+//  ② 호흡수 변화 (보호자 폰 / 예전 펌웨어): 조끼가 1 초마다 보내는 호흡수(1 분 평균)를 최근 2 분 동안 이은 선
+const val BREATH_WAVE_SEC = 20
 const val BREATH_CHART_MS = 120_000L
 
 @Composable
 fun BreathChart() {
+    val wave by BreathWave.wave.collectAsState()
     val history = SensorRepository.state.collectAsState().value.breathHistory
-    // 그래프가 시간에 맞춰 왼쪽으로 흐르도록 현재 시각을 0.5 초마다 갱신
-    val now by produceState(System.currentTimeMillis()) { while (true) { delay(500); value = System.currentTimeMillis() } }
-    val pts = history.filter { now - it.t <= BREATH_CHART_MS }
+    // 화면이 새로 그려질 때마다 현재 시각 갱신 → 파형이 부드럽게 왼쪽으로 흐름
+    val now by produceState(System.currentTimeMillis()) {
+        while (true) withFrameMillis { value = System.currentTimeMillis() }
+    }
+    val live = wave.ys.size >= 2 && now - wave.lastAt < 2_000
+    val ratePts = history.filter { now - it.t <= BREATH_CHART_MS }
 
-    Box(Modifier.fillMaxWidth().height(115.dp), contentAlignment = Alignment.Center) {
-        if (pts.size < 2) {
-            Text("조끼를 연결하면 호흡수 그래프가 나와요", fontSize = 13.sp, color = TextCharcoal)
-            return@Box
+    Column {
+        Box(Modifier.fillMaxWidth().height(115.dp), contentAlignment = Alignment.Center) {
+            when {
+                live -> BreathWaveCanvas(wave, now)
+                ratePts.size >= 2 -> BreathRateCanvas(ratePts, now)
+                else -> Text("조끼를 연결하면 호흡 그래프가 나와요", fontSize = 13.sp, color = TextCharcoal)
+            }
         }
-        val maxRate = maxOf(30f, (pts.maxOf { it.rate } / 10f).let { kotlin.math.ceil(it) * 10f }) // 30, 40, 50… 단위
+        Spacer(Modifier.height(14.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            val labels = if (live) listOf("20초 전", "15초", "10초", "5초", "지금")
+                         else listOf("2분 전", "1분 30초", "1분", "30초", "지금")
+            labels.forEach { Text(it, fontSize = 10.sp, color = TextCharcoal) }
+        }
+    }
+}
+
+// ① 실시간 파형 (필터 거친 값, 위 = 들숨)
+@Composable
+private fun BreathWaveCanvas(wave: BreathWave.Snapshot, now: Long) {
+    val per = BreathWave.FS.toInt()                    // 초당 샘플 수
+    val span = BREATH_WAVE_SEC * per                   // 화면에 보이는 샘플 수
+    val ys = wave.ys.copyOfRange(maxOf(0, wave.ys.size - span - per), wave.ys.size)
+    // 마지막 패킷 이후 흐른 시간만큼 왼쪽으로 밀어서 부드럽게 흐르게 (최대 한 패킷 분량)
+    val shift = ((now - wave.lastAt) / (1000f / per)).coerceIn(0f, per / 5f + 1f)
+    val finite = ys.filter { !it.isNaN() }
+    if (finite.isEmpty()) {
+        Text("호흡 센서를 확인해 주세요", fontSize = 13.sp, color = TextCharcoal)
+        return
+    }
+    // 세로 범위: 보이는 값의 최소~최대 (최소 폭 20 mV → 숨을 안 쉴 때 잡음이 크게 부풀지 않게)
+    val mid = (finite.max() + finite.min()) / 2f
+    val half = maxOf(10f, (finite.max() - finite.min()) / 2f) * 1.15f
+    Canvas(Modifier.fillMaxSize()) {
+        val w = size.width
+        val h = size.height
+        val dx = w / span
+        val last = ys.size - 1
+        fun x(i: Int) = w - (last - i + shift) * dx
+        fun y(v: Float) = h * (0.5f - (v - mid) / (2f * half))
+        val line = Path()
+        var pen = false
+        for (i in ys.indices) {
+            val v = ys[i]
+            val xi = x(i)
+            if (v.isNaN() || xi < -dx) { pen = false; continue }
+            if (!pen) { line.moveTo(xi, y(v)); pen = true } else line.lineTo(xi, y(v))
+        }
+        drawPath(line, ChartLine, style = Stroke(width = 6f, cap = StrokeCap.Round, join = StrokeJoin.Round))
+    }
+}
+
+// ② 호흡수 변화 (최근 2 분)
+@Composable
+private fun BreathRateCanvas(pts: List<BreathPoint>, now: Long) {
+    val maxRate = maxOf(30f, kotlin.math.ceil(pts.maxOf { it.rate } / 10f) * 10f) // 30, 40, 50… 단위
+    Box(Modifier.fillMaxSize()) {
         Canvas(Modifier.fillMaxSize()) {
             val w = size.width
             val h = size.height
@@ -282,7 +340,6 @@ fun BreathChart() {
             drawPath(fill, Brush.verticalGradient(listOf(ChartLine.copy(alpha = 0.40f), Color.Transparent)))
             drawPath(line, ChartLine, style = Stroke(width = 7f, cap = StrokeCap.Round))
         }
-        // 위쪽 눈금 (그래프 최대값)
         Text("${maxRate.toInt()}회/분", fontSize = 10.sp, color = TextCharcoal, modifier = Modifier.align(Alignment.TopStart))
     }
 }
@@ -298,12 +355,6 @@ fun BreathTab() {
     ) {
         Column(Modifier.padding(horizontal = 22.dp, vertical = 22.dp)) {
             BreathChart()
-            Spacer(Modifier.height(14.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                listOf("2분 전", "1분 30초", "1분", "30초", "지금").forEach {
-                    Text(it, fontSize = 10.sp, color = TextCharcoal)
-                }
-            }
         }
     }
     Spacer(Modifier.height(26.dp))
@@ -329,8 +380,8 @@ fun BreathTab() {
             Column(Modifier.fillMaxSize(), Arrangement.Center, Alignment.CenterHorizontally) {
                 Text(sensor.vest?.takeIf { it.breathValid && it.ieRatio > 0f }?.let { String.format("1 : %.1f", 1f / it.ieRatio) } ?: "--", fontSize = 48.sp, color = TextCharcoal, maxLines = 1)
                 Spacer(Modifier.height(10.dp))
-                Text("시간당 호흡비", fontSize = 13.sp, color = TextCharcoal)
-                Text("(호기:흡기)", fontSize = 13.sp, color = TextCharcoal)
+                Text("호흡비 (최근 1분)", fontSize = 13.sp, color = TextCharcoal)
+                Text("(흡기:호기)", fontSize = 13.sp, color = TextCharcoal)
             }
         }
     }
