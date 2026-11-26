@@ -61,23 +61,23 @@ constexpr uint8_t  W_BREATH_FAST    = 2;
 
 // [I] 들숨 유지: 숨을 들이쉰 상태(들숨 단계)가 이만큼 끝나지 않음 — 공황 시 가슴 근육 경직
 //     기준표: 3 s 이상. 성인 평상 들숨은 약 1~2 s.
-constexpr uint32_t INHALE_HOLD_MS = 3000;
+constexpr uint32_t INHALE_HOLD_MS = 7000;   // 11/26 착용 튜닝(시연용): 평소 들숨 최대 5.6 s → 7 s. 필터 때문에 참은 숨은 I/X 가 바뀌어 잡힐 수 있음
 constexpr uint8_t  W_INHALE_HOLD  = 2;
 
 // [X] 날숨 지속: 숨을 내쉬는 단계가 이만큼 끝나지 않음 — 소리 지르기·비명
 //     기준표: 4 s 이상. ⚠ 아주 느린 평상 호흡(10 회/분 이하)에서도 날숨+쉼이 4 s 가까이 될 수 있다.
 //     평소 호흡 실측에서 'ex=' 최대값을 보고, 평소에 걸리면 문턱을 올린다.
-constexpr uint32_t EXHALE_HOLD_MS = 4000;
+constexpr uint32_t EXHALE_HOLD_MS = 7000;   // 11/26 착용 튜닝(시연용): 평소 날숨 최대 5.5 s → 7 s
 constexpr uint8_t  W_EXHALE_HOLD  = 2;
 
 // [V] 호흡 간격 변동성 급증: 15 s 창 호흡 주기의 변동계수(표준편차/평균) ≥ 평소 × 배수
 //     기준표: 평소 대비 2~3 배. 평소 값은 '# ctl' 의 cv= 를 평상 호흡 1 분 동안 보고 적는다.
-constexpr uint16_t BREATH_CV_BASE_X100 = 20;   // [측정] 평소 변동계수 × 100 (0.20 → 20). 0 = 규칙 끔
+constexpr uint16_t BREATH_CV_BASE_X100 = 24;   // 11/26 착용 측정: 평소 cv 중앙 0.23 (90% 0.35) → 문턱 0.48   // [측정] 평소 변동계수 × 100 (0.20 → 20). 0 = 규칙 끔
 constexpr uint16_t BREATH_CV_FACTOR_X10 = 20;  // 배수 × 10 (2.0 배 → 20)
 constexpr uint8_t  W_BREATH_VAR = 1;
 
 // [E] 들숨:날숨 비율 ≥ 문턱 (안정 시 약 0.5 = 1:2, 날숨이 짧아지면 커진다). 값 ×100.
-constexpr uint16_t IE_HIGH_X100 = 100;   // 100 = 1.00
+constexpr uint16_t IE_HIGH_X100 = 205;   // 11/26 착용 측정: 평소 95% 1.62 → ×1.25   // 100 = 1.00
 constexpr uint8_t  W_IE         = 1;
 
 // ---------------------------------------------------------------------------
@@ -85,7 +85,7 @@ constexpr uint8_t  W_IE         = 1;
 // ---------------------------------------------------------------------------
 //  ZD10-100 은 500 g 급 센서라 kgf 절대값(최대 악력 70%)은 잴 수 없다 → 평소 대비 배수로 정한다.
 //  GRIP_BASE_MV: 조끼를 메고 평소처럼 가방끈을 잡았을 때의 이동평균 (gl=/gr= 값)  [측정]
-constexpr uint16_t GRIP_BASE_MV         = 300;
+constexpr uint16_t GRIP_BASE_MV         = 500;   // 11/26: 평소 64 mV 지만 걷기·잡기 흔들림이 커서 시연용으로 강한 쥠 = 1500 mV
 constexpr uint8_t  GRIP_ON_FACTOR_X10   = 30;   // 평소의 3.0 배 이상 → "강한 쥠" 시작
 constexpr uint8_t  GRIP_OFF_FACTOR_X10  = 20;   // 평소의 2.0 배 이하 → 해제 (사이 = 직전 상태 유지)
 constexpr bool     GRIP_REQUIRE_BOTH    = false; // true = 양손 모두 쥐어야 인정
@@ -120,7 +120,7 @@ constexpr bool     UNREC_ENABLED       = true;
 constexpr uint32_t UNREC_BREATH_MS     = 10000;  // 완성된 호흡이 이만큼 없음 (기준표 10 s)
 constexpr uint32_t UNREC_GRIP_HOLD_MS  = 10000;  // 강한 쥠이 이만큼 계속 (11/20 학생 결정: 10 s)
 // 공통
-constexpr uint32_t CONFIRM_MS = 3000;  // 조건이 이만큼 계속돼야 확정 (순간 튐 무시)
+constexpr uint32_t CONFIRM_MS = 5000;  // 11/26 시연용: 말하기 등 순간 점수 튐 무시 (3 → 5 s)  // 조건이 이만큼 계속돼야 확정 (순간 튐 무시)
 
 // ---------------------------------------------------------------------------
 //  6) 유지 중 조기 종료 (진정됨) — 기본 꺼짐. 켜면 유지 시간 전이라도 배기

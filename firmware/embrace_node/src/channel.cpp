@@ -94,6 +94,10 @@ static void addFsr(const char* name, uint8_t pin, uint32_t rRef, uint32_t rBias,
   c.rRef = rRef; c.rBias = cfg::FSR_HAS_BIAS ? rBias : 0; c.compression = comp;
   c.lowMv = cfg::FSR_OPEN_MV;    c.lowState = Health::Open;   c.lowCheck = cfg::FSR_HAS_BIAS;
   c.highMv = cfg::FSR_SHORT_MV;  c.highState = Health::Short;
+  // 악력은 세게 쥐면 내부 풀다운에서 ADC 상한(약 3159 mV)에 붙는다 → '단락' 으로 보면 강한 쥠이 0 이 된다.
+  //  (11/26 착용 튜닝: 4 초 꽉 쥐어도 G 가 안 걸린 원인). 악력 채널만 상한 고장 판정을 끈다.
+  //  가슴·등(압박)은 그대로 둔다 → 꽉 눌리면 '단락' → 안전 쪽(비상 배기)으로 간다.
+  if (!comp) c.highMv = 0xFFFFFFFFu;
 }
 
 static void addXgzp(const char* name, uint8_t pin) {

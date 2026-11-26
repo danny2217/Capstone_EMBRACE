@@ -10,6 +10,7 @@
 //  프로토콜 표: docs/ble_protocol.md
 #pragma once
 #include <Arduino.h>
+#include "frame.h"
 
 enum class HrState : uint8_t {
   None,       // 한 번도 받은 적 없음 (워치·폰 없이 사용)
@@ -37,6 +38,12 @@ void hrLinkBegin();
 HrStatus hrLinkGet();
 
 const char* hrStateName(HrState s);
+
+// 앱 호흡 그래프용 파형 (WAVE 특성 e3b70005). 제어 태스크가 프레임마다 부른다.
+//  br_bp(대역통과 값) 2 개를 평균해 25 Hz 로 버퍼에 넣기만 한다 → 빠르고 막히지 않는다.
+//  0.2 초마다 BLE 태스크가 묶어서 notify:  [0] 2 [1] 순번 [2] 개수 n [3..] int16 LE × n (mV, 0 중심)
+//  호흡 센서 이상(단선·단락)이면 -32768.
+void hrLinkPushFrame(const Frame& f);
 
 // 앱 연결 진단 ('# app ...' 줄용)
 struct AppLinkStats {

@@ -4,7 +4,8 @@
 //    아동용 폰 앱(BLE 클라이언트)
 //       ├─ write 4바이트 (HR_IN)   ──▶ onPacket()  ──▶ 공유 변수 ──▶ hrLinkGet() (판단 모듈)
 //       ├─ notify 20바이트 (STATUS) ◀── statusTask (1 초마다, ctlGetStatus() 스냅샷을 포장)
-//       └─ write 1바이트 (CMD)      ──▶ 'd'/'x' 만 ctlCommand() 로 넘김 (배기 쪽만 허용)
+//       ├─ write 1바이트 (CMD)      ──▶ 'i'/'d'/'x'/'r' 을 ctlCommand() 로 넘김
+//       └─ notify 파형 (WAVE)       ◀── waveTask (0.2 초마다, br_bp 25 Hz 묶음) — 앱 실시간 호흡 그래프
 //
 //  안전 관련 설계
 //    - 이 모듈은 공압 핀을 직접 건드리지 않는다. 명령은 상태 머신의 명령 큐로만 넘긴다.
@@ -16,7 +17,9 @@
 #include "hr_link.h"
 #include "../config.h"
 #include "control_task.h"
+#include "channel.h"
 
+#include <string.h>
 #include <BLEDevice.h>
 #include <BLEServer.h>
 #include <BLEUtils.h>
@@ -29,6 +32,7 @@ static const char* SERVICE_UUID = "e3b70001-5c3a-4f6e-9a1d-2b8f0c4d7e10";
 static const char* HR_IN_UUID   = "e3b70002-5c3a-4f6e-9a1d-2b8f0c4d7e10";   // 폰 → 조끼 심박
 static const char* STATUS_UUID  = "e3b70003-5c3a-4f6e-9a1d-2b8f0c4d7e10";   // 조끼 → 폰 상태
 static const char* CMD_UUID     = "e3b70004-5c3a-4f6e-9a1d-2b8f0c4d7e10";   // 폰 → 조끼 명령
+static const char* WAVE_UUID    = "e3b70005-5c3a-4f6e-9a1d-2b8f0c4d7e10";   // 조끼 → 폰 호흡 파형 (그래프)
 
 static constexpr uint8_t HR_PROTO_VERSION     = 1;
 static constexpr uint8_t STATUS_PROTO_VERSION = 1;
@@ -50,6 +54,21 @@ static uint8_t  s_conn = 0;
 static uint32_t s_statusSent = 0, s_cmdOk = 0, s_cmdBad = 0;
 
 static BLECharacteristic* s_statusChar = nullptr;
+static BLECharacteristic* s_waveChar   = nullptr;
+
+// 호흡 파형 버퍼 (제어 태스크가 쓰고 waveTask 가 읽는다). s_waveLock 으로 보호.
+static constexpr uint8_t  WAVE_PROTO_VERSION = 2;
+static constexpr uint32_t WAVE_PERIOD_MS     = 200;   // 0.2 초마다 → 25 Hz 면 약 5 개
+static constexpr size_t   WAVE_MAX_N         = 8;     // 3 + 2×8 = 19 바이트 ≤ 기본 MTU 20 바이트
+static constexpr int16_t  WAVE_BAD           = -32768;
+static constexpr size_t   WAVE_RING          = 32;
+static portMUX_TYPE s_waveLock = portMUX_INITIALIZER_UNLOCKED;
+static int16_t  s_waveRing[WAVE_RING];
+static size_t   s_waveHead = 0, s_waveCount = 0;
+static int      s_iBreath = -2;                       // -2 = 아직 안 찾음, -1 = 호흡 채널 없음
+static int32_t  s_pairSum = 0;
+static uint8_t  s_pairN = 0;
+static bool     s_pairBad = false;
 
 // 락 안에서만 부른다: 오래 끊겼으면 fresh 를 내리고 재합류 카운터를 0 으로
 static void expireLocked(uint32_t now) {
@@ -184,6 +203,69 @@ static void statusTask(void*) {
 }
 
 // ----------------------------------------------------------------------------
+//  호흡 파형 (WAVE)
+// ----------------------------------------------------------------------------
+void hrLinkPushFrame(const Frame& f) {
+  if (s_iBreath == -2) {
+    s_iBreath = -1;
+    Channel* ch = channels();
+    for (size_t i = 0; i < channelCount(); i++)
+      if (strcmp(ch[i].name, "breath") == 0) s_iBreath = static_cast<int>(i);
+  }
+  if (s_iBreath < 0) return;
+
+  // 50 Hz → 25 Hz: 두 프레임을 평균. 둘 중 하나라도 센서 이상이면 그 점은 '이상'
+  if (f.health[s_iBreath] != static_cast<uint8_t>(Health::Ok)) s_pairBad = true;
+  s_pairSum += f.br_bp;
+  if (++s_pairN < 2) return;
+  const int16_t v = s_pairBad ? WAVE_BAD : static_cast<int16_t>(s_pairSum / 2);
+  s_pairSum = 0;
+  s_pairN = 0;
+  s_pairBad = false;
+
+  portENTER_CRITICAL(&s_waveLock);
+  s_waveRing[s_waveHead] = v;
+  s_waveHead = (s_waveHead + 1) % WAVE_RING;
+  if (s_waveCount < WAVE_RING) s_waveCount++;
+  portEXIT_CRITICAL(&s_waveLock);
+}
+
+static void waveTask(void*) {
+  uint8_t seq = 0;
+  uint8_t pkt[3 + 2 * WAVE_MAX_N];
+  TickType_t next = xTaskGetTickCount();
+  for (;;) {
+    vTaskDelayUntil(&next, pdMS_TO_TICKS(WAVE_PERIOD_MS));
+    portENTER_CRITICAL(&s_lock);
+    const uint8_t conn = s_conn;
+    portEXIT_CRITICAL(&s_lock);
+
+    // 가장 오래된 것부터 최대 WAVE_MAX_N 개 꺼낸다 (접속이 없어도 꺼내서 버린다 → 다음 접속 때 옛 값이 안 나감)
+    int16_t vals[WAVE_MAX_N];
+    size_t n = 0;
+    portENTER_CRITICAL(&s_waveLock);
+    while (s_waveCount && n < WAVE_MAX_N) {
+      vals[n++] = s_waveRing[(s_waveHead + WAVE_RING - s_waveCount) % WAVE_RING];
+      s_waveCount--;
+    }
+    if (!conn) s_waveCount = 0;
+    portEXIT_CRITICAL(&s_waveLock);
+
+    if (!conn || !s_waveChar || n == 0) continue;
+    pkt[0] = WAVE_PROTO_VERSION;
+    pkt[1] = seq++;
+    pkt[2] = static_cast<uint8_t>(n);
+    for (size_t i = 0; i < n; i++) {
+      const uint16_t u = static_cast<uint16_t>(vals[i]);
+      pkt[3 + 2 * i] = static_cast<uint8_t>(u & 0xFF);
+      pkt[4 + 2 * i] = static_cast<uint8_t>(u >> 8);
+    }
+    s_waveChar->setValue(pkt, 3 + 2 * n);
+    s_waveChar->notify();
+  }
+}
+
+// ----------------------------------------------------------------------------
 void hrLinkBegin() {
   if (!cfg::ENABLE_HR_BLE) return;
 
@@ -207,6 +289,11 @@ void hrLinkBegin() {
       CMD_UUID, BLECharacteristic::PROPERTY_WRITE | BLECharacteristic::PROPERTY_WRITE_NR);
   cmd->setCallbacks(new CmdWriteCb());
 
+  s_waveChar = svc->createCharacteristic(WAVE_UUID, BLECharacteristic::PROPERTY_NOTIFY);
+#if defined(CONFIG_BLUEDROID_ENABLED)
+  s_waveChar->addDescriptor(new BLE2902());
+#endif
+
   svc->start();
 
   // 광고 패킷은 31바이트 한도 → 128비트 서비스 UUID 는 광고에, 이름은 스캔 응답에 나눠 싣는다
@@ -224,6 +311,7 @@ void hrLinkBegin() {
 
   // 우선순위 1: 전송(2)·센싱(3)·제어(4) 보다 낮다
   xTaskCreatePinnedToCore(statusTask, "ble_stat", 4096, nullptr, 1, nullptr, cfg::SENSE_CORE);
+  xTaskCreatePinnedToCore(waveTask, "ble_wave", 4096, nullptr, 1, nullptr, cfg::SENSE_CORE);
 }
 
 HrStatus hrLinkGet() {

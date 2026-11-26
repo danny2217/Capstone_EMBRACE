@@ -21,6 +21,7 @@
 #include "../detect_config.h"
 #include "detector.h"
 #include "frame.h"
+#include "hr_link.h"
 #include "pneumatic.h"
 
 struct Event { char text[112]; };
@@ -242,6 +243,7 @@ static void controlTask(void*) {
     if (xQueueReceive(s_frameQ, &f, pdMS_TO_TICKS(20)) == pdTRUE) {
       do {
         detectorPush(f);
+        hrLinkPushFrame(f);   // 앱 호흡 그래프용 파형 (버퍼에 넣기만, 전송은 BLE 태스크)
       } while (xQueueReceive(s_frameQ, &f, 0) == pdTRUE);   // 밀린 것까지 모두
       s_lastFrameMs = millis();
     }
