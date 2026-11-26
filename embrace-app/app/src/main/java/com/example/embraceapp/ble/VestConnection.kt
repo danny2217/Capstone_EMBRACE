@@ -29,7 +29,10 @@ import java.util.UUID
 // 하는 일
 //  1) connect()      : 조끼에 접속 → 서비스/특성 찾기 → 상태(STATUS) 알림 켜기
 //  2) sendHeartRate(): 심박 4바이트 패킷을 HR_IN 에 쓰기 (워치 값을 폰이 전달할 때 사용)
-//  3) exhaust()      : 비상 배기 명령(CMD) 보내기 — 배기 외의 명령은 만들지 않음 (안전 규칙)
+//  3) exhaust()      : 비상 배기 명령(CMD 'x') 보내기
+//  4) inflate() / deflate() : 개발자 도구용 수동 가압('i') / 배기('d')
+//     → 조끼 상태 머신이 가압 시간·과압·센서 이상을 그대로 검사한다 (안전장치는 펌웨어 쪽)
+//     → 펌웨어 hr_link.cpp onCommand 가 'i' 를 받도록 바뀌어야 가압이 동작한다 (2026-11-25 방법 A)
 //
 // ※ STATUS 20바이트의 항목 구성은 아직 문서에 없어서 "받은 원본(lastStatus)"만 보관합니다.
 //    항목이 정해지면 onStatus() 안에서 해석해 SensorRepository 로 넘기면 돼요.
@@ -46,6 +49,8 @@ object VestConnection {
 
     // 비상 배기 명령 값. 조끼는 'd'(배기) / 'x'(비상 배기)만 받음 → SOS 는 'x' 로 확정 (2026-11-23 팀 결정)
     private const val CMD_EXHAUST: Char = 'x'
+    private const val CMD_INFLATE: Char = 'i' // 수동 가압 (개발자 도구)
+    private const val CMD_DEFLATE: Char = 'd' // 배기 (개발자 도구)
 
     const val VEST_NAME = "EMBRACE-VEST" // 조끼 광고 이름
 
@@ -118,11 +123,17 @@ object VestConnection {
     }
 
     // 비상 배기 명령 보내기. 명령을 조끼에 보냈으면 true, 연결이 안 됐거나 못 보냈으면 false
-    fun exhaust(): Boolean {
+    fun exhaust(): Boolean = sendCommand(CMD_EXHAUST)
+
+    // 개발자 도구: 수동 가압 / 배기. 보냈으면 true (조끼가 거부하면 상태가 안 바뀜)
+    fun inflate(): Boolean = sendCommand(CMD_INFLATE)
+    fun deflate(): Boolean = sendCommand(CMD_DEFLATE)
+
+    private fun sendCommand(c: Char): Boolean {
         val g = gatt ?: return false
         val ch = cmdChar ?: return false
         if (_link.value != VestLink.Connected) return false
-        return write(g, ch, byteArrayOf(CMD_EXHAUST.code.toByte()), preferNoResponse = false)
+        return write(g, ch, byteArrayOf(c.code.toByte()), preferNoResponse = false)
     }
 
     // ── 내부 처리 ──
