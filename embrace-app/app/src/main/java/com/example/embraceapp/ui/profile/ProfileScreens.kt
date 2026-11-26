@@ -343,8 +343,20 @@ fun DevToolsSection(onClose: () -> Unit) {
     val link by VestConnection.link.collectAsState()
     val v = sensor.vest
     var confirmExhaust by remember { mutableStateOf(false) }
-    var confirmInflate by remember { mutableStateOf(false) }
     var result by remember { mutableStateOf<String?>(null) }
+    // 명령을 보낸 뒤 조끼 상태가 실제로 바뀌었는지 확인 (조끼가 거부하면 상태가 그대로)
+    var check by remember { mutableStateOf<Pair<Char, Long>?>(null) }
+    LaunchedEffect(check) {
+        val (cmd, _) = check ?: return@LaunchedEffect
+        kotlinx.coroutines.delay(2_500)
+        val st = SensorRepository.state.value.vest?.stateCode
+        result = when (cmd) {
+            'i' -> if (st == 2 || st == 3) "가압 중이에요." else
+                "조끼가 가압을 시작하지 않았어요. 지금 조끼 펌웨어는 앱의 가압 명령을 받지 않아요 (펌웨어 수정 필요)."
+            else -> if (st == 4 || st == 6) "배기 중이에요." else
+                "배기할 공기가 없어요. 배기는 가압 또는 유지 중일 때만 돼요."
+        }
+    }
 
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text("개발자 도구", fontSize = 13.sp, modifier = Modifier.weight(1f))
@@ -366,19 +378,25 @@ fun DevToolsSection(onClose: () -> Unit) {
             val connected = link == VestLink.Connected
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
-                    onClick = { confirmInflate = true },
+                    onClick = {
+                        if (VestConnection.inflate()) { result = "가압 명령을 보냈어요..."; check = 'i' to System.currentTimeMillis() }
+                        else result = "보내지 못했어요. 조끼 연결을 확인해 주세요."
+                    },
                     enabled = connected,
                     colors = ButtonDefaults.buttonColors(containerColor = PrimaryCoral, contentColor = Color.White),
                     modifier = Modifier.weight(1f)
                 ) { Text("가압 시작", fontSize = 12.sp) }
                 Button(
-                    onClick = { result = if (VestConnection.deflate()) "배기 명령을 보냈어요." else "보내지 못했어요. 조끼 연결을 확인해 주세요." },
+                    onClick = {
+                        if (VestConnection.deflate()) { result = "배기 명령을 보냈어요..."; check = 'd' to System.currentTimeMillis() }
+                        else result = "보내지 못했어요. 조끼 연결을 확인해 주세요."
+                    },
                     enabled = connected,
                     colors = ButtonDefaults.buttonColors(containerColor = BgPeach, contentColor = TextCharcoal),
                     modifier = Modifier.weight(1f)
                 ) { Text("배기", fontSize = 12.sp) }
             }
-            Text("가압은 '대기' 상태에서만 시작돼요. 정해진 시간이 지나면 조끼가 알아서 유지 → 배기로 넘어가요.", fontSize = 11.sp, color = IconGray)
+            Text("누르면 바로 명령을 보내요. 2~3초 뒤 조끼 상태가 바뀌었는지 아래에 알려 줘요.", fontSize = 11.sp, color = IconGray)
 
             // 지금 펌웨어가 받는 명령: 비상 배기
             Button(
@@ -389,19 +407,6 @@ fun DevToolsSection(onClose: () -> Unit) {
             ) { Text("비상 배기 보내기", fontSize = 12.sp) }
             result?.let { Text(it, fontSize = 11.sp, color = IconGray) }
         }
-    }
-
-    if (confirmInflate) {
-        ConfirmDialog(
-            title = "가압 시작",
-            question = "조끼에 공기를 넣어요. 아이가 입지 않은 상태인지 확인해 주세요.",
-            confirmText = "가압",
-            onConfirm = {
-                confirmInflate = false
-                result = if (VestConnection.inflate()) "가압 명령을 보냈어요. 조끼 상태가 '가압 중'으로 바뀌는지 확인해 주세요." else "보내지 못했어요. 조끼 연결을 확인해 주세요."
-            },
-            onCancel = { confirmInflate = false }
-        )
     }
 
     if (confirmExhaust) {
