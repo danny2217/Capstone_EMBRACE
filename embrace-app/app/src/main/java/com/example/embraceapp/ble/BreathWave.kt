@@ -12,7 +12,9 @@ import kotlin.math.tan
 // PC 프로그램(breath-sensor/software/visualizer.py ② 그래프)과 같은 필터를 걸어 보관한다.
 //   필터: 2차 Butterworth 대역통과 0.08~0.7 Hz (고역 biquad → 저역 biquad, Direct Form II transposed)
 //         계수 계산과 시작 처리(_init_steady)까지 visualizer.py 를 그대로 옮김. 표본 주파수만 25 Hz.
-//   패킷: [0] 버전(1) [1] 순번 [2] 샘플 수 n [3..] mV × n (uint16 리틀 엔디언). mV 0 = 센서 이상
+//   패킷 버전 2 (권장): [0] 2 [1] 순번 [2] 샘플 수 n [3..] 조끼가 이미 필터를 건 값 × n (int16 LE, mV, 0 중심)
+//                       -32768 = 센서 이상. 펌웨어의 f.br_bp(= PC 비쥬얼라이저 breath_bp 열)를 그대로 보낸 것 → 앱은 필터 안 함
+//   패킷 버전 1        : [0] 1 ... 원본 mV × n (uint16). 0 = 센서 이상 → 앱이 위 필터를 건다
 object BreathWave {
     const val FS = 25f                         // 조끼가 보내는 샘플 수 (초당)
     private const val HP_HZ = 0.08f            // 기저선 흔들림 제거 (약 5회/분 이하)
@@ -33,16 +35,21 @@ object BreathWave {
 
     @Synchronized
     fun onPacket(b: ByteArray) {
-        if (b.size < 3 || b[0].toInt() != 1) return
+        if (b.size < 3) return
+        val ver = b[0].toInt()
+        if (ver != 1 && ver != 2) return
         val n = b[2].toInt() and 0xFF
         if (b.size < 3 + 2 * n) return
         for (i in 0 until n) {
-            val mv = (b[3 + 2 * i].toInt() and 0xFF) or ((b[4 + 2 * i].toInt() and 0xFF) shl 8)
-            val y = if (mv == 0) {
+            val raw = (b[3 + 2 * i].toInt() and 0xFF) or ((b[4 + 2 * i].toInt() and 0xFF) shl 8)
+            val y = if (ver == 2) {
+                val v = raw.toShort().toInt()               // 부호 있는 16비트
+                if (v == -32768) Float.NaN else v.toFloat()   // 조끼가 이미 필터를 건 값
+            } else if (raw == 0) {
                 resetFilter()          // 센서 이상 → 다시 연결되면 필터를 처음부터
                 Float.NaN
             } else {
-                lp.update(hp.update(mv.toFloat()))
+                lp.update(hp.update(raw.toFloat()))
             }
             buf[head] = y
             head = (head + 1) % KEEP

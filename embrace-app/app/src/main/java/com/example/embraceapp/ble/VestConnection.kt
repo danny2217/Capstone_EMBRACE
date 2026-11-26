@@ -52,6 +52,7 @@ object VestConnection {
     private const val CMD_EXHAUST: Char = 'x'
     private const val CMD_INFLATE: Char = 'i' // 수동 가압 (개발자 도구)
     private const val CMD_DEFLATE: Char = 'd' // 배기 (개발자 도구)
+    private const val CMD_UNLOCK: Char = 'r'  // 잠금(LOCKOUT) 해제 (개발자 도구)
 
     const val VEST_NAME = "EMBRACE-VEST" // 조끼 광고 이름
 
@@ -74,6 +75,8 @@ object VestConnection {
     private var hrChar: BluetoothGattCharacteristic? = null
     private var cmdChar: BluetoothGattCharacteristic? = null
     private var waveChar: BluetoothGattCharacteristic? = null // STATUS 알림을 켠 다음에 이어서 켠다
+    private val _hasWave = MutableStateFlow(false) // 연결된 조끼 펌웨어가 호흡 파형을 지원하는지
+    val hasWave: StateFlow<Boolean> = _hasWave.asStateFlow()
     private var seq = 0
     private var appCtx: Context? = null   // 푸시 알림용
     private var userClosing = false       // 사용자가 직접 끊는 중인지 (이때는 "끊어졌어요" 안내를 안 띄움)
@@ -130,12 +133,23 @@ object VestConnection {
     // 개발자 도구: 수동 가압 / 배기. 보냈으면 true (조끼가 거부하면 상태가 안 바뀜)
     fun inflate(): Boolean = sendCommand(CMD_INFLATE)
     fun deflate(): Boolean = sendCommand(CMD_DEFLATE)
+    // 비상 배기 뒤 잠금 상태 풀기 → 조끼가 대기 상태로 돌아가 다시 가압할 수 있음
+    fun unlock(): Boolean = sendCommand(CMD_UNLOCK)
 
+    // 명령 1바이트 보내기. 워치 심박 쓰기와 겹쳐 "바쁨"으로 실패하면 0.15 초 간격으로 최대 5번 다시 보냄.
+    // 조끼와 연결돼 있고 명령 특성이 있으면 true (실제로 조끼가 받아들였는지는 상태 변화로 확인)
     private fun sendCommand(c: Char): Boolean {
         val g = gatt ?: return false
         val ch = cmdChar ?: return false
         if (_link.value != VestLink.Connected) return false
-        return write(g, ch, byteArrayOf(c.code.toByte()), preferNoResponse = false)
+        trySend(g, ch, c, tries = 6)
+        return true
+    }
+
+    private fun trySend(g: BluetoothGatt, ch: BluetoothGattCharacteristic, c: Char, tries: Int) {
+        if (gatt !== g || _link.value != VestLink.Connected) return
+        val ok = write(g, ch, byteArrayOf(c.code.toByte()), preferNoResponse = false)
+        if (!ok && tries > 1) handler.postDelayed({ trySend(g, ch, c, tries - 1) }, 150)
     }
 
     // ── 내부 처리 ──
@@ -178,15 +192,12 @@ object VestConnection {
 
             // 상태(STATUS) 알림 켜기 → 끝나면 onDescriptorWrite 에서 호흡 파형(WAVE) 알림도 켠다
             // (안드로이드는 GATT 작업을 한 번에 하나만 처리하므로 차례로 켜야 함)
-            waveChar = service.getCharacteristic(WAVE) // 예전 펌웨어에는 없음 → 그래프는 호흡수 변화로 대신 그림
+            waveChar = service.getCharacteristic(WAVE) // 예전 펌웨어에는 없음 → 그래프 자리에 안내 문구
+            _hasWave.value = waveChar != null
             BreathWave.clear()
             val st = service.getCharacteristic(STATUS)
-            if (st != null) {
-                g.setCharacteristicNotification(st, true)
-                val cccd = st.getDescriptor(CCCD)
-                if (cccd != null) writeDescriptor(g, cccd, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
-                else enableWave(g)
-            } else enableWave(g)
+            if (st != null && st.getDescriptor(CCCD) != null) enableNotify(g, st, tries = 3)
+            else enableWave(g)
         }
 
         override fun onDescriptorWrite(g: BluetoothGatt, d: BluetoothGattDescriptor, status: Int) {
@@ -209,11 +220,20 @@ object VestConnection {
     }
 
     // 호흡 파형 알림 켜기 (새 펌웨어에만 있음)
-    @SuppressLint("MissingPermission")
     private fun enableWave(g: BluetoothGatt) {
         val w = waveChar ?: return
-        g.setCharacteristicNotification(w, true)
-        w.getDescriptor(CCCD)?.let { writeDescriptor(g, it, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE) }
+        if (w.getDescriptor(CCCD) != null) enableNotify(g, w, tries = 3)
+    }
+
+    // 알림 켜기. 워치 심박 쓰기와 겹쳐서 "바쁨"으로 실패하면 0.3 초 뒤 다시 시도
+    @SuppressLint("MissingPermission")
+    private fun enableNotify(g: BluetoothGatt, ch: BluetoothGattCharacteristic, tries: Int) {
+        if (gatt !== g) return
+        g.setCharacteristicNotification(ch, true)
+        val d = ch.getDescriptor(CCCD) ?: return
+        if (!writeDescriptor(g, d, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE) && tries > 1) {
+            handler.postDelayed({ enableNotify(g, ch, tries - 1) }, 300)
+        }
     }
 
     // 조끼가 1초마다 보내는 상태(20바이트) 받기
@@ -254,6 +274,7 @@ object VestConnection {
             hrChar = null
             cmdChar = null
             waveChar = null
+            _hasWave.value = false
             BreathWave.clear()
             _lastStatus.value = null
             _address.value = null
@@ -284,9 +305,9 @@ object VestConnection {
 
     @SuppressLint("MissingPermission")
     @Suppress("DEPRECATION")
-    private fun writeDescriptor(g: BluetoothGatt, d: BluetoothGattDescriptor, value: ByteArray) {
-        if (Build.VERSION.SDK_INT >= 33) {
-            g.writeDescriptor(d, value)
+    private fun writeDescriptor(g: BluetoothGatt, d: BluetoothGattDescriptor, value: ByteArray): Boolean {
+        return if (Build.VERSION.SDK_INT >= 33) {
+            g.writeDescriptor(d, value) == BluetoothStatusCodes.SUCCESS
         } else {
             d.value = value
             g.writeDescriptor(d)
