@@ -61,13 +61,13 @@ constexpr uint8_t  W_BREATH_FAST    = 2;
 
 // [I] 들숨 유지: 숨을 들이쉰 상태(들숨 단계)가 이만큼 끝나지 않음 — 공황 시 가슴 근육 경직
 //     기준표: 3 s 이상. 성인 평상 들숨은 약 1~2 s.
-constexpr uint32_t INHALE_HOLD_MS = 7000;   // 11/26 착용 튜닝(시연용): 평소 들숨 최대 5.6 s → 7 s. 필터 때문에 참은 숨은 I/X 가 바뀌어 잡힐 수 있음
+constexpr uint32_t INHALE_HOLD_MS = 3000;   // 11/26 시연: 문서 기준 3 s 로 복귀 (평소 들숨이 5 s 넘게 잡힐 때가 있어 오작동 가능)
 constexpr uint8_t  W_INHALE_HOLD  = 2;
 
 // [X] 날숨 지속: 숨을 내쉬는 단계가 이만큼 끝나지 않음 — 소리 지르기·비명
 //     기준표: 4 s 이상. ⚠ 아주 느린 평상 호흡(10 회/분 이하)에서도 날숨+쉼이 4 s 가까이 될 수 있다.
 //     평소 호흡 실측에서 'ex=' 최대값을 보고, 평소에 걸리면 문턱을 올린다.
-constexpr uint32_t EXHALE_HOLD_MS = 7000;   // 11/26 착용 튜닝(시연용): 평소 날숨 최대 5.5 s → 7 s
+constexpr uint32_t EXHALE_HOLD_MS = 4000;   // 11/26 시연: 문서 기준 4 s 로 복귀
 constexpr uint8_t  W_EXHALE_HOLD  = 2;
 
 // [V] 호흡 간격 변동성 급증: 15 s 창 호흡 주기의 변동계수(표준편차/평균) ≥ 평소 × 배수

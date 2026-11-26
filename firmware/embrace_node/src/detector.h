@@ -37,6 +37,7 @@ struct DetectResult {
   BreathMetrics breath60;   // 보고용 1 분 창 (BREATH_REPORT_WINDOW_MS) — 보호자 앱의 분당 호흡수·들숨날숨비
   bool     breathEnabled;  // 호흡 채널이 켜져 있나
   bool     breathHealthy;
+  bool     breathConnected;  // 호흡 센서 단선·단락 아님 (잡음은 연결로 본다)
   uint32_t gripHoldMs;     // 악력 "쥠" 이 계속된 시간
   uint16_t gripL, gripR;   // 이동평균 (mV), 채널 꺼짐이면 0
   uint16_t compMaxMv;      // 가슴·등 압박 중 큰 값 (이동평균, mV)

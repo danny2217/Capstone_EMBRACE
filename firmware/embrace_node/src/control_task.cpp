@@ -38,6 +38,9 @@ static uint32_t s_compOverSince = 0;
 static uint32_t s_cycles = 0;          // 유지까지 간 가압 횟수
 static uint32_t s_airSinceMs = 0;      // 가압(INFLATE)을 시작한 시각 — 무호흡 배기 유예 기준
 static uint32_t s_evtDrop = 0;
+// 지금 공기가 '수동 명령(앱 개발자 도구·시리얼 i)' 으로 들어갔는가.
+//  수동 가압은 시험·시연용이라 호흡 벨트 이상·무호흡으로는 비상 배기하지 않는다 (압박·센싱 정지·시간 상한은 그대로).
+static bool     s_manualAir = false;
 
 // 전송 태스크가 읽는 스냅샷
 struct Snapshot {
@@ -89,6 +92,7 @@ static void enter(CtlState next, uint32_t now, const char* why) {
   event("# EVT %s->%s why=%s", ctlStateName(s_state), ctlStateName(next), why);
   if (s_state == CtlState::Inflate && next == CtlState::Hold) s_cycles++;
   if (next == CtlState::Inflate) s_airSinceMs = now;
+  if (next != CtlState::Inflate && next != CtlState::Hold) s_manualAir = false;
   s_state = next;
   s_enteredMs = now;
   bool pump, valve;
@@ -103,7 +107,8 @@ static const char* dangerReason(uint32_t now, const DetectResult& d, bool frames
   if (cfg::COMP_LIMIT_MV > 0 && s_compOver && now - s_compOverSince >= cfg::COMP_LIMIT_HOLD_MS)
     return "comp_over_limit";
   if (d.compFault) return "comp_sensor_fault";
-  if (cfg::EMERGENCY_ON_BREATH_FAULT && d.breathEnabled && !d.breathHealthy) return "breath_sensor_fault";
+  if (s_manualAir) return nullptr;   // 수동(개발자) 가압: 호흡 관련 배기는 건너뛴다
+  if (cfg::EMERGENCY_ON_BREATH_FAULT && d.breathEnabled && !d.breathConnected) return "breath_sensor_fault";
   // 무호흡: 꼭지점이 BREATH_APNEA_MS 동안 없음. 단 "가압 시작 후" 그 시간이 지나야 인정한다.
   //  → 경로 2(호흡 안 보임)로 가압해도 곧바로 배기되지 않고, 가압 뒤 20 s 안에 호흡이 다시 보여야 한다.
   if (d.breath.apnea && now - s_airSinceMs > det::BREATH_APNEA_MS) return "apnea";
@@ -134,7 +139,30 @@ static void fsmStep(uint32_t now, const DetectResult& d, char cmd, bool estop, b
     if (why) { enter(CtlState::Emergency, now, why); return; }
   }
 
-  // ③ 상태별 전이
+  // ③ 수동 명령 (앱 개발자 도구·시리얼) — 시험·시연용이라 쿨다운·잠금·배기 중에도 바로 따른다 (11/26)
+  //    i: 대기·배기 중·쉬는 시간·비상 배기·잠금 어디서든 바로 가압 (가압 중·유지 중이면 이미 차 있으므로 busy)
+  //    d: 공기가 없더라도 밸브를 열어 배기 단계로   r: 잠금·쉬는 시간·비상 배기를 끝내고 대기로
+  //    자동 감지 가압은 이 경로를 쓰지 않는다 → 쉬는 시간·잠금 규칙은 자동 가압에만 적용된다.
+  if (cmd == 'i' && (s_state == CtlState::Idle || s_state == CtlState::Deflate ||
+                     s_state == CtlState::Cooldown || s_state == CtlState::Emergency ||
+                     s_state == CtlState::Lockout)) {
+    if (!framesOk) { reject(cmd, "sensing_not_ready"); return; }
+    enter(CtlState::Inflate, now, "manual_i");
+    s_manualAir = true;
+    return;
+  }
+  if (cmd == 'd' && (s_state == CtlState::Idle || s_state == CtlState::Cooldown ||
+                     s_state == CtlState::Lockout)) {
+    enter(CtlState::Deflate, now, "manual_d");
+    return;
+  }
+  if (cmd == 'r' && (s_state == CtlState::Cooldown || s_state == CtlState::Emergency ||
+                     s_state == CtlState::Lockout)) {
+    enter(CtlState::Idle, now, "reset_r");
+    return;
+  }
+
+  // ④ 상태별 전이
   switch (s_state) {
     case CtlState::BootVent:
       if (el >= cfg::BOOT_VENT_MS) enter(CtlState::Idle, now, "boot_vent_done");
@@ -184,7 +212,7 @@ static void fsmStep(uint32_t now, const DetectResult& d, char cmd, bool estop, b
       break;
   }
   if (cmd == 'i' && (before == CtlState::Inflate || before == CtlState::Hold ||
-                     before == CtlState::Deflate || before == CtlState::BootVent))
+                     before == CtlState::BootVent))
     reject(cmd, "busy");
 }
 

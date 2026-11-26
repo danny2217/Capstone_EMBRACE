@@ -52,7 +52,8 @@ static void senseTask(void*) {
 
     // 호흡 대역통과: 오버샘플 평균 mV 를 그대로 넣는다. 비정상(단선·단락)이면 필터를 처음부터 다시
     if (iBreath >= 0) {
-      if (f.health[iBreath] == static_cast<uint8_t>(Health::Ok)) {
+      // 잡음(Noisy)은 펌프 전기 잡음으로 자주 걸린다 → 필터는 단선·단락일 때만 처음부터 (11/26)
+      if (f.health[iBreath] != static_cast<uint8_t>(Health::Open) && f.health[iBreath] != static_cast<uint8_t>(Health::Short)) {
         const float y = bp.update(static_cast<float>(f.mv[iBreath]));
         f.br_bp = static_cast<int16_t>(y >= 0 ? y + 0.5f : y - 0.5f);
       } else {

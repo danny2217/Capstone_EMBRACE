@@ -215,7 +215,8 @@ void hrLinkPushFrame(const Frame& f) {
   if (s_iBreath < 0) return;
 
   // 50 Hz → 25 Hz: 두 프레임을 평균. 둘 중 하나라도 센서 이상이면 그 점은 '이상'
-  if (f.health[s_iBreath] != static_cast<uint8_t>(Health::Ok)) s_pairBad = true;
+  // 단선·단락만 '이상'. 잡음(Noisy)은 값을 그대로 보낸다 → 앱 그래프가 점점이 끊기지 않게 (11/26)
+  if (!(f.health[s_iBreath] != static_cast<uint8_t>(Health::Open) && f.health[s_iBreath] != static_cast<uint8_t>(Health::Short))) s_pairBad = true;
   s_pairSum += f.br_bp;
   if (++s_pairN < 2) return;
   const int16_t v = s_pairBad ? WAVE_BAD : static_cast<int16_t>(s_pairSum / 2);

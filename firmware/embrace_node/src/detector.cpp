@@ -20,7 +20,7 @@ static uint8_t s_pulseHead = 0, s_pulseCount = 0;
 static_assert(det::GRIP_PULSE_COUNT <= PULSE_RING, "GRIP_PULSE_COUNT 는 8 이하");
 
 static uint16_t s_gripL = 0, s_gripR = 0, s_compMax = 0;
-static bool s_compFault = false, s_breathHealthy = false;
+static bool s_compFault = false, s_breathHealthy = false, s_breathConnected = false;
 static uint32_t s_lastT = 0;
 
 static bool s_condActive = false;     // 점수 조건이 지금 성립하나
@@ -58,7 +58,11 @@ void detectorPush(const Frame& f) {
 
   // --- 호흡
   if (s_iBreath >= 0) {
-    s_breathHealthy = f.health[s_iBreath] == static_cast<uint8_t>(Health::Ok);
+    // 연결됨 = 단선·단락이 아님. 잡음(Noisy)은 펌프가 돌 때 전기 잡음으로 자주 걸려서
+    //  숨 세기·비상 배기 판단에서는 '정상' 으로 본다 (11/26: 가압하자마자 비상 배기되던 원인 후보)
+    s_breathConnected = f.health[s_iBreath] != static_cast<uint8_t>(Health::Open) &&
+                        f.health[s_iBreath] != static_cast<uint8_t>(Health::Short);
+    s_breathHealthy = s_breathConnected;
     // 대역통과 값(0 중심, 기준선 흔들림 제거)으로 숨을 센다. 예전에는 이동평균 f.ma 를 썼다.
     s_breath.push(t, static_cast<float>(f.br_bp), s_breathHealthy);
   }
@@ -96,6 +100,7 @@ DetectResult detectorResult(uint32_t now) {
   r.breath60 = s_breath.metrics(now, det::BREATH_REPORT_WINDOW_MS);
   r.breathEnabled = s_iBreath >= 0;
   r.breathHealthy = s_breathHealthy;
+  r.breathConnected = s_breathConnected;
   r.gripHoldMs = s_gripActive ? (now - s_gripSince) : 0;
   r.gripL = s_gripL;
   r.gripR = s_gripR;
