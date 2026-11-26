@@ -52,7 +52,10 @@ constexpr uint8_t PIN_BACK   = 8;    // ADC1_CH7
 //  R_ref 고르는 법: 측정할 구간 양 끝의 센서 저항 R1, R2 를 재서 R_ref ≈ √(R1·R2)
 //                   (그때 두 점의 전압 차가 가장 크다)
 //  R_bias        : 동작 구간 센서 저항의 10배 이상 (감도를 거의 깎지 않으면서 단선 검출)
-constexpr uint32_t BREATH_R_PU_OHM = 0;         // 호흡 외부 풀업 (Ω). 0 = 외부 저항 없음
+constexpr uint32_t BREATH_R_PU_OHM = 10000;     // 호흡 외부 풀업 (Ω). 0 = 외부 저항 없음
+                                                // 11/26 확정: 갈-검-검-빨-갈 10 kΩ. 근거 = 내부 풀다운 병렬 시험
+                                                //   (센서 뺀 상태 3159→2471 mV) + 휴지 152 mV (센서 ≈ 480 Ω)
+                                                // ⚠ 0 으로 두면 내부 풀업(~45 kΩ)이 외부 10 kΩ 과 병렬로 켜진다
 
 // 저항 없이 호흡 센서를 쓰는 방법 (BREATH_R_PU_OHM = 0 일 때만 적용)
 //   BREATH_SOURCE_PIN = 0  : 칩 내부 풀업(약 45 kΩ) 사용. 센서 저항이 수십 kΩ 일 때 맞다.
@@ -116,6 +119,22 @@ constexpr uint32_t XGZP_OPEN_MV    = 100;
 constexpr uint32_t XGZP_SHORT_MV   = 2950;
 
 constexpr uint32_t FAULT_HOLD      = 25;    // 0.5 s
+
+// 신호선 빠짐(핀이 떠서 몸·전선이 60 Hz 를 받는 상태) 검출 — 호흡 채널만
+//  평균 전압은 레일에 붙지 않아 OPEN/SHORT 문턱으로는 못 잡는다 (11/26 실제로 겪음:
+//  평균 0.8 V "정상처럼" 보였지만 60 Hz 가 1 V 가까이 흔들림).
+//  → 한 번 읽을 때의 버스트(약 0.9 ms, 17회 변환) 안에서 최대-최소 폭을 본다.
+//     정상: 단일 변환 잡음 std 3.5~6 mV → 폭 약 15~25 mV  (11/26 noise_probe b/c/d)
+//     떠 있음: 60 Hz × ~1 V 진폭 → 0.9 ms 동안 최대 약 300 mV
+//  최근 NOISY_WINDOW 샘플 중 NOISY_MIN_COUNT 개 이상이 폭 > NOISY_SPREAD_MV 이면 'noisy'
+//  (50 Hz 로 60 Hz 를 보면 위상이 샘플마다 돌아서 폭이 작게 나오는 샘플이 섞이므로 '개수' 로 본다)
+//  호스트 시뮬레이션(11/26): 60 Hz 진폭 300 mV 이상 → 약 0.9 s 안에 noisy (+FAULT_HOLD 0.5 s),
+//                           정상 잡음 std 12 mV(실측의 2배)까지 60 s 동안 헛검출 0.
+//                           진폭 300 mV 미만으로 약하게 뜨면 못 잡는다 (한계).
+//  ⚠ 펌프·밸브가 도는 중의 정상 폭은 아직 측정 전 → 공압 시험 때 '# WARN ... noisy' 가 뜨면 이 값부터 재측정
+constexpr uint32_t NOISY_SPREAD_MV = 50;
+constexpr uint8_t  NOISY_WINDOW    = 25;    // 0.5 s (32 이하)
+constexpr uint8_t  NOISY_MIN_COUNT = 13;    // 과반
 
 // ---------------------------------------------------------------------------
 //  7) 출력

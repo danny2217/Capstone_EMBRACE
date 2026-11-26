@@ -55,9 +55,15 @@ void adcInit(Channel* ch, size_t n) {
   }
 }
 
-uint32_t adcReadMv(uint8_t pin) {
+uint32_t adcReadMv(uint8_t pin, uint16_t* spreadMv) {
   for (uint8_t i = 0; i < cfg::DISCARD; i++) (void)analogReadMilliVolts(pin);
-  uint32_t sum = 0;
-  for (uint8_t i = 0; i < cfg::OVERSAMPLE; i++) sum += analogReadMilliVolts(pin);
+  uint32_t sum = 0, lo = UINT32_MAX, hi = 0;
+  for (uint8_t i = 0; i < cfg::OVERSAMPLE; i++) {
+    const uint32_t v = analogReadMilliVolts(pin);
+    sum += v;
+    if (v < lo) lo = v;
+    if (v > hi) hi = v;
+  }
+  if (spreadMv) *spreadMv = static_cast<uint16_t>(hi - lo);
   return (sum + cfg::OVERSAMPLE / 2) / cfg::OVERSAMPLE;
 }

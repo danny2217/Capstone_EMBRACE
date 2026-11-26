@@ -27,6 +27,10 @@ static_assert(SRC == 0 || ((!cfg::ENABLE_BREATH || SRC != cfg::PIN_BREATH) &&
                            (!cfg::ENABLE_BACK || SRC != cfg::PIN_BACK)),
               "BREATH_SOURCE_PIN 이 센서 핀과 겹친다");
 static_assert(cfg::PERIOD_MS >= 10, "PERIOD_MS 가 너무 짧다 (전송 대역폭 초과)");
+static_assert(cfg::NOISY_WINDOW >= 1 && cfg::NOISY_WINDOW <= 32, "NOISY_WINDOW 는 1~32");
+static_assert(cfg::NOISY_MIN_COUNT >= 1 && cfg::NOISY_MIN_COUNT <= cfg::NOISY_WINDOW,
+              "NOISY_MIN_COUNT 는 1~NOISY_WINDOW");
+static_assert(cfg::OVERSAMPLE >= 4, "떠 있음 검출은 버스트 폭을 쓰므로 OVERSAMPLE 4 이상");
 
 static Channel g_ch[MAX_CH];
 static size_t g_n = 0;
@@ -45,6 +49,7 @@ const char* healthName(Health h) {
     case Health::Ok:    return "ok";
     case Health::Open:  return "open";
     case Health::Short: return "short";
+    case Health::Noisy: return "noisy";
   }
   return "?";
 }
@@ -55,8 +60,14 @@ Health Channel::classify(uint32_t mv) const {
   return Health::Ok;
 }
 
-Health Channel::updateHealth(uint32_t mv) {
-  const Health h = classify(mv);
+Health Channel::updateHealth(uint32_t mv, uint16_t spreadMv) {
+  Health h = classify(mv);
+  if (noisyCheck) {
+    constexpr uint32_t mask = (cfg::NOISY_WINDOW >= 32) ? 0xFFFFFFFFu : ((1u << cfg::NOISY_WINDOW) - 1u);
+    noisyBits = ((noisyBits << 1) | (spreadMv > cfg::NOISY_SPREAD_MV ? 1u : 0u)) & mask;
+    // 레일 고정(단선·단락)이 우선. 레일이 아닌데 흔들림이 크면 '떠 있음'
+    if (h == Health::Ok && __builtin_popcount(noisyBits) >= cfg::NOISY_MIN_COUNT) h = Health::Noisy;
+  }
   if (h == candidate) {
     if (hold < cfg::FAULT_HOLD) hold++;
   } else {
@@ -74,6 +85,7 @@ static void addPullup(const char* name, uint8_t pin) {
   c.name = name; c.pin = pin; c.kind = ChKind::RubberPullup; c.rRef = cfg::BREATH_R_PU_OHM;
   c.lowMv = cfg::PULLUP_SHORT_MV;  c.lowState = Health::Short; c.lowCheck = true;
   c.highMv = cfg::PULLUP_OPEN_MV;  c.highState = Health::Open;
+  c.noisyCheck = true;   // 외부 풀업 + 긴 선: 신호선이 빠지면 핀이 뜬다 (11/26)
 }
 
 static void addFsr(const char* name, uint8_t pin, uint32_t rRef, uint32_t rBias, bool comp) {

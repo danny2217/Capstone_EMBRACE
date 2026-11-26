@@ -15,7 +15,8 @@ enum class ChKind : uint8_t {
   Xgzp,          // 압력센서 아날로그 출력 직결 (0.2~2.7 V)
 };
 
-enum class Health : uint8_t { Ok = 0, Open = 1, Short = 2 };
+// Noisy = 신호선이 빠져 핀이 떠 있음 (평균은 멀쩡해 보이나 60 Hz 가 크게 실림). 호흡 채널만 판정.
+enum class Health : uint8_t { Ok = 0, Open = 1, Short = 2, Noisy = 3 };
 
 const char* kindName(ChKind k);
 const char* healthName(Health h);
@@ -33,6 +34,7 @@ struct Channel {
   uint32_t lowMv, highMv;
   Health lowState, highState;
   bool lowCheck;
+  bool noisyCheck = false;   // 버스트 폭으로 '떠 있음' 판정 (config.h NOISY_*)
 
   MovingAverage<cfg::MA_WINDOW> ma;
 
@@ -40,10 +42,11 @@ struct Channel {
   Health reported = Health::Ok;
   Health candidate = Health::Ok;
   uint32_t hold = 0;
+  uint32_t noisyBits = 0;    // 최근 NOISY_WINDOW 샘플의 "폭 초과" 여부 (비트 1 = 초과)
 
   Health classify(uint32_t mv) const;
-  // 샘플 하나 반영, 현재 인정된 상태를 돌려준다
-  Health updateHealth(uint32_t mv);
+  // 샘플 하나 반영, 현재 인정된 상태를 돌려준다. spreadMv = 이번 버스트의 최대-최소
+  Health updateHealth(uint32_t mv, uint16_t spreadMv = 0);
 };
 
 // config.h 의 ENABLE_* 순서대로 켜진 채널만 채운다. 반환값 = 채널 수

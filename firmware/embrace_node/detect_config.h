@@ -36,8 +36,11 @@ constexpr bool DETECT_ENABLED = true;   // false 면 자동 가압을 하지 않
 //  들숨 때 mV 가 올라가는 센서면 false, 내려가는 센서면 true  [측정: 숨을 크게 들이쉬어 보고 정한다]
 constexpr bool     BREATH_INVERT  = false;
 //  봉우리·골짜기로 인정할 최소 흔들림 (mV). 정지 잡음보다 크고 평상 호흡 진폭보다 작게.  [측정]
-//  (예: 정지 잡음 ±10 mV, 평상 호흡 진폭 150 mV → 40 정도)
-constexpr uint16_t BREATH_HYST_MV = 40;
+//  11/26 측정 (10 kΩ, 성인 착용, 이동평균 후):
+//    정지 잡음 p-p 약 2~8 mV / 평상 호흡 진폭 약 45~80 mV (가장 얕은 호흡 45)
+//    → 40 은 가장 얕은 호흡과 거의 같아 놓친다. 잡음의 ~5배, 얕은 호흡의 ~1/3 인 15 로 내림.
+//    ★ replay_embrace.py 의 '권장' 값으로 최종 확정할 것 (아동 착용 시 진폭이 더 작아 재측정 필요)
+constexpr uint16_t BREATH_HYST_MV = 15;
 //  호흡수·들숨날숨비·변동성을 계산하는 창 (ms)
 //   판단용 15 s : 빨리 반응해야 한다.   보고용 60 s : 보호자 앱의 "1 분" 정의.
 constexpr uint32_t BREATH_DETECT_WINDOW_MS = 15000;

@@ -35,10 +35,11 @@ static void senseTask(void*) {
 
     // 모든 채널을 같은 주기 안에서 연달아 읽는다 → 같은 seq·t_ms 를 공유 (센서 퓨전의 전제)
     for (size_t i = 0; i < n; i++) {
-      const uint32_t mv = adcReadMv(ch[i].pin);
+      uint16_t spread = 0;
+      const uint32_t mv = adcReadMv(ch[i].pin, &spread);
       f.mv[i] = static_cast<uint16_t>(mv);
       f.ma[i] = static_cast<uint16_t>(ch[i].ma.push(mv));
-      f.health[i] = static_cast<uint8_t>(ch[i].updateHealth(mv));
+      f.health[i] = static_cast<uint8_t>(ch[i].updateHealth(mv, spread));
     }
 
     f.period_us = prevUs ? (startUs - prevUs) : 0;   // unsigned 뺄셈 → micros() 순환에도 안전

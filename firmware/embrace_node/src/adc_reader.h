@@ -12,4 +12,5 @@ bool breathUsesSourcePin();
 // 채널 하나를 읽어 mV 로 돌려준다 (eFuse 보정 적용)
 //   DISCARD 회 버림 → 직전 채널의 잔류 전하(크로스토크) 제거
 //   OVERSAMPLE 회 평균 → 양자화·열잡음 감소
-uint32_t adcReadMv(uint8_t pin);
+//   spreadMv != nullptr 이면 OVERSAMPLE 회 중 (최대 - 최소) 를 돌려준다 → 신호선 빠짐 검출용
+uint32_t adcReadMv(uint8_t pin, uint16_t* spreadMv = nullptr);
