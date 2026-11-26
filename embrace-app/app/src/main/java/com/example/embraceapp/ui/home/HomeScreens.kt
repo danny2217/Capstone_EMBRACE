@@ -248,39 +248,42 @@ fun VitalLine(iconRes: Int, label: String, value: String, unit: String) {
     }
 }
 
-// 호흡 그래프 (초록 곡선, 지금은 예시 값)
+// 호흡 그래프: 최근 2 분 동안 조끼가 보낸 호흡수(회/분)를 시간 순서로 이은 선
+//  - 조끼는 1 초마다 STATUS 를 보내고, 그 안의 호흡수는 "최근 1 분 평균"이라 숨을 바꿔도 천천히 따라온다
+//  - 실제 숨 곡선(들숨·날숨 파형)은 조끼가 보내지 않아서 그릴 수 없다 (펌웨어가 원본 값을 보내야 가능)
+const val BREATH_CHART_MS = 120_000L
+
 @Composable
 fun BreathChart() {
-    val pts = SensorRepository.state.collectAsState().value.breathSeries // 그래프 높이 값 (0~1)
-    // 그래프가 오른쪽에서 왼쪽으로 계속 흐르게 하는 값 (0 ~ 점 개수까지 계속 증가하며 반복)
-    val n = pts.size.coerceAtLeast(2)
-    val flow by rememberInfiniteTransition(label = "flow").animateFloat(
-        initialValue = 0f, targetValue = n.toFloat(),
-        animationSpec = infiniteRepeatable(tween(n * 700, easing = LinearEasing), RepeatMode.Restart),
-        label = "flowValue"
-    )
-    Canvas(Modifier.fillMaxWidth().height(115.dp).clip(RoundedCornerShape(0.dp))) {
-        if (pts.size < 2) return@Canvas
-        val w = size.width
-        val h = size.height
-        val step = w / (pts.size - 1)
-        val k = flow.toInt()        // 몇 칸 흘렀는지
-        val frac = flow - k         // 한 칸 안에서 얼마나 흘렀는지 (0~1)
-        // 점 n+1개를 왼쪽으로 조금씩 밀면서 그림. 값은 돌려가며 사용 (나중에 실제 센서 값이 들어오면 이 부분을 최신 값 목록으로 교체)
-        val xs = (0..pts.size).map { it * step - frac * step }
-        val ys = (0..pts.size).map { h * (1 - pts[(it + k) % pts.size]) }
-        // 점들을 부드러운 곡선으로 연결
-        val line = Path().apply {
-            moveTo(xs[0], ys[0])
-            for (i in 1..pts.size) {
-                val x0 = xs[i - 1]; val x1 = xs[i]
-                cubicTo((x0 + x1) / 2, ys[i - 1], (x0 + x1) / 2, ys[i], x1, ys[i])
-            }
+    val history = SensorRepository.state.collectAsState().value.breathHistory
+    // 그래프가 시간에 맞춰 왼쪽으로 흐르도록 현재 시각을 0.5 초마다 갱신
+    val now by produceState(System.currentTimeMillis()) { while (true) { delay(500); value = System.currentTimeMillis() } }
+    val pts = history.filter { now - it.t <= BREATH_CHART_MS }
+
+    Box(Modifier.fillMaxWidth().height(115.dp), contentAlignment = Alignment.Center) {
+        if (pts.size < 2) {
+            Text("조끼를 연결하면 호흡수 그래프가 나와요", fontSize = 13.sp, color = TextCharcoal)
+            return@Box
         }
-        // 곡선 아래 색 채우기
-        val fill = Path().apply { addPath(line); lineTo(xs[pts.size], h); lineTo(xs[0], h); close() }
-        drawPath(fill, Brush.verticalGradient(listOf(ChartLine.copy(alpha = 0.40f), Color.Transparent)))
-        drawPath(line, ChartLine, style = Stroke(width = 7f, cap = StrokeCap.Round)) // 선을 굵고 둥글게
+        val maxRate = maxOf(30f, (pts.maxOf { it.rate } / 10f).let { kotlin.math.ceil(it) * 10f }) // 30, 40, 50… 단위
+        Canvas(Modifier.fillMaxSize()) {
+            val w = size.width
+            val h = size.height
+            fun x(t: Long) = w * (1f - (now - t).toFloat() / BREATH_CHART_MS)
+            fun y(r: Float) = h * (1f - (r / maxRate).coerceIn(0f, 1f))
+            val line = Path().apply {
+                moveTo(x(pts[0].t), y(pts[0].rate))
+                for (k in 1 until pts.size) {
+                    val x0 = x(pts[k - 1].t); val x1 = x(pts[k].t)
+                    cubicTo((x0 + x1) / 2, y(pts[k - 1].rate), (x0 + x1) / 2, y(pts[k].rate), x1, y(pts[k].rate))
+                }
+            }
+            val fill = Path().apply { addPath(line); lineTo(x(pts.last().t), h); lineTo(x(pts[0].t), h); close() }
+            drawPath(fill, Brush.verticalGradient(listOf(ChartLine.copy(alpha = 0.40f), Color.Transparent)))
+            drawPath(line, ChartLine, style = Stroke(width = 7f, cap = StrokeCap.Round))
+        }
+        // 위쪽 눈금 (그래프 최대값)
+        Text("${maxRate.toInt()}회/분", fontSize = 10.sp, color = TextCharcoal, modifier = Modifier.align(Alignment.TopStart))
     }
 }
 
@@ -297,7 +300,7 @@ fun BreathTab() {
             BreathChart()
             Spacer(Modifier.height(14.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                listOf("00.00", "04.00", "08.00", "12.00", "16.00", "20.00", "23.59").forEach {
+                listOf("2분 전", "1분 30초", "1분", "30초", "지금").forEach {
                     Text(it, fontSize = 10.sp, color = TextCharcoal)
                 }
             }
