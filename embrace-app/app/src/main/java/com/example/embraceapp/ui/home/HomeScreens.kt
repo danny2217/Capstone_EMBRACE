@@ -249,37 +249,35 @@ fun VitalLine(iconRes: Int, label: String, value: String, unit: String) {
     }
 }
 
-// 호흡 그래프
-//  ① 실시간 파형 (자녀 폰 + 새 펌웨어): 조끼가 25 Hz 로 보내는 호흡 센서 값을 PC 프로그램과 같은 필터
-//     (0.08~0.7 Hz 대역통과, BreathWave.kt)로 걸러서 최근 20 초를 그린다. 숨 쉴 때마다 오르내린다.
-//  ② 호흡수 변화 (보호자 폰 / 예전 펌웨어): 조끼가 1 초마다 보내는 호흡수(1 분 평균)를 최근 2 분 동안 이은 선
+// 호흡 그래프: 조끼가 25 Hz 로 보내는 호흡 센서 값을 PC 프로그램과 같은 필터
+//   (0.08~0.7 Hz 대역통과, BreathWave.kt)로 걸러서 최근 20 초를 그린다. 위로 올라가면 들숨, 내려가면 날숨.
+//   ⚠ 조끼 펌웨어가 호흡 파형(WAVE 특성 e3b70005)을 보내야 그려진다. 안 보내면 이유를 글로 보여 준다.
 const val BREATH_WAVE_SEC = 20
-const val BREATH_CHART_MS = 120_000L
 
 @Composable
 fun BreathChart() {
     val wave by BreathWave.wave.collectAsState()
-    val history = SensorRepository.state.collectAsState().value.breathHistory
+    val link by VestConnection.link.collectAsState()
+    val hasWaveChar by VestConnection.hasWave.collectAsState()
     // 화면이 새로 그려질 때마다 현재 시각 갱신 → 파형이 부드럽게 왼쪽으로 흐름
     val now by produceState(System.currentTimeMillis()) {
         while (true) withFrameMillis { value = System.currentTimeMillis() }
     }
     val live = wave.ys.size >= 2 && now - wave.lastAt < 2_000
-    val ratePts = history.filter { now - it.t <= BREATH_CHART_MS }
 
     Column {
         Box(Modifier.fillMaxWidth().height(115.dp), contentAlignment = Alignment.Center) {
             when {
                 live -> BreathWaveCanvas(wave, now)
-                ratePts.size >= 2 -> BreathRateCanvas(ratePts, now)
-                else -> Text("조끼를 연결하면 호흡 그래프가 나와요", fontSize = 13.sp, color = TextCharcoal)
+                link != VestLink.Connected -> Text("조끼를 연결하면 호흡 그래프가 나와요", fontSize = 13.sp, color = TextCharcoal)
+                !hasWaveChar -> Text("조끼 펌웨어가 호흡 파형을 보내지 않아요\n(펌웨어에 파형 전송 기능 추가 필요)",
+                                     fontSize = 12.sp, color = TextCharcoal, textAlign = TextAlign.Center)
+                else -> Text("호흡 파형 받는 중...", fontSize = 13.sp, color = TextCharcoal)
             }
         }
         Spacer(Modifier.height(14.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            val labels = if (live) listOf("20초 전", "15초", "10초", "5초", "지금")
-                         else listOf("2분 전", "1분 30초", "1분", "30초", "지금")
-            labels.forEach { Text(it, fontSize = 10.sp, color = TextCharcoal) }
+            listOf("20초 전", "15초", "10초", "5초", "지금").forEach { Text(it, fontSize = 10.sp, color = TextCharcoal) }
         }
     }
 }
@@ -316,31 +314,6 @@ private fun BreathWaveCanvas(wave: BreathWave.Snapshot, now: Long) {
             if (!pen) { line.moveTo(xi, y(v)); pen = true } else line.lineTo(xi, y(v))
         }
         drawPath(line, ChartLine, style = Stroke(width = 6f, cap = StrokeCap.Round, join = StrokeJoin.Round))
-    }
-}
-
-// ② 호흡수 변화 (최근 2 분)
-@Composable
-private fun BreathRateCanvas(pts: List<BreathPoint>, now: Long) {
-    val maxRate = maxOf(30f, kotlin.math.ceil(pts.maxOf { it.rate } / 10f) * 10f) // 30, 40, 50… 단위
-    Box(Modifier.fillMaxSize()) {
-        Canvas(Modifier.fillMaxSize()) {
-            val w = size.width
-            val h = size.height
-            fun x(t: Long) = w * (1f - (now - t).toFloat() / BREATH_CHART_MS)
-            fun y(r: Float) = h * (1f - (r / maxRate).coerceIn(0f, 1f))
-            val line = Path().apply {
-                moveTo(x(pts[0].t), y(pts[0].rate))
-                for (k in 1 until pts.size) {
-                    val x0 = x(pts[k - 1].t); val x1 = x(pts[k].t)
-                    cubicTo((x0 + x1) / 2, y(pts[k - 1].rate), (x0 + x1) / 2, y(pts[k].rate), x1, y(pts[k].rate))
-                }
-            }
-            val fill = Path().apply { addPath(line); lineTo(x(pts.last().t), h); lineTo(x(pts[0].t), h); close() }
-            drawPath(fill, Brush.verticalGradient(listOf(ChartLine.copy(alpha = 0.40f), Color.Transparent)))
-            drawPath(line, ChartLine, style = Stroke(width = 7f, cap = StrokeCap.Round))
-        }
-        Text("${maxRate.toInt()}회/분", fontSize = 10.sp, color = TextCharcoal, modifier = Modifier.align(Alignment.TopStart))
     }
 }
 
