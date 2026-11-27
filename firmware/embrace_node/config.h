@@ -193,9 +193,9 @@ constexpr uint8_t PIN_VALVE_IN4 = 18;
 constexpr bool VALVE_NORMALLY_CLOSED = true;
 
 // 시간 (ms)
-constexpr uint32_t INFLATE_MS        = 10000;     // 가압: 펌프 켜는 시간
-constexpr uint32_t INFLATE_MAX_MS    = 15000;    //   절대 상한 (INFLATE_MS 를 실수로 키워도 넘지 못함)
-constexpr uint32_t HOLD_MS           = 180000;   // 유지: 3 분
+constexpr uint32_t INFLATE_MS        = 15000;     // 가압: 펌프 켜는 시간 (11/27 시연용 15 s)
+constexpr uint32_t INFLATE_MAX_MS    = 20000;    //   절대 상한 (INFLATE_MS 를 실수로 키워도 넘지 못함)
+constexpr uint32_t HOLD_MS           = 30000;    // 유지: 30 s (11/27 시연용, 원래 3 분)
 constexpr uint32_t HOLD_MAX_MS       = 300000;   //   절대 상한 5 분
 constexpr uint32_t DEFLATE_MS        = 10000;    // 배기: 밸브 여는 시간
 constexpr uint32_t COOLDOWN_MS       = 60000;    // 배기 후 다음 자동 가압까지 최소 간격
